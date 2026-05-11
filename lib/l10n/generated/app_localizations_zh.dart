@@ -18,10 +18,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get operatorAccount => '操作人帳號';
 
   @override
+  String get operatorAccountRequired => '請輸入操作人帳號。';
+
+  @override
   String get password => '密碼';
 
   @override
+  String get passwordRequired => '請輸入密碼。';
+
+  @override
+  String get googleCodeOptional => 'Google 驗證碼（如需要）';
+
+  @override
   String get signIn => '登入';
+
+  @override
+  String get devEnterWorkspace => '開發模式：直接進入工作台';
 
   @override
   String get leftPanelTitle => '帳號';
@@ -43,6 +55,42 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get addAppAccount => '新增 APP 帳號';
+
+  @override
+  String get switchAppAccount => '切換 APP 帳號';
+
+  @override
+  String get signingInAppAccount => '登入中...';
+
+  @override
+  String get appAccountLoginTitle => '登入 APP 帳號';
+
+  @override
+  String get appAccountLoginSubtitle => '使用真實 APP 帳號作為 IM 發言身份。';
+
+  @override
+  String get appAccountEmail => 'APP 帳號郵箱';
+
+  @override
+  String get appAccountEmailRequired => '請輸入 APP 帳號郵箱。';
+
+  @override
+  String get appAccountPassword => 'APP 帳號密碼';
+
+  @override
+  String get appAccountPasswordRequired => '請輸入 APP 帳號密碼。';
+
+  @override
+  String get forceAppAccountLogin => '強制登入';
+
+  @override
+  String get forceAppAccountLoginHint => '僅在服務端提示設備已綁定時使用。';
+
+  @override
+  String get cancel => '取消';
+
+  @override
+  String get signInAppAccount => '登入 APP 帳號';
 
   @override
   String get searchUserHint => '搜尋 UID、暱稱或郵箱';
@@ -74,10 +122,22 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get operatorAccount => '操作人帳號';
 
   @override
+  String get operatorAccountRequired => '請輸入操作人帳號。';
+
+  @override
   String get password => '密碼';
 
   @override
+  String get passwordRequired => '請輸入密碼。';
+
+  @override
+  String get googleCodeOptional => 'Google 驗證碼（如需要）';
+
+  @override
   String get signIn => '登入';
+
+  @override
+  String get devEnterWorkspace => '開發模式：直接進入工作台';
 
   @override
   String get leftPanelTitle => '帳號';
@@ -99,6 +159,42 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get addAppAccount => '新增 APP 帳號';
+
+  @override
+  String get switchAppAccount => '切換 APP 帳號';
+
+  @override
+  String get signingInAppAccount => '登入中...';
+
+  @override
+  String get appAccountLoginTitle => '登入 APP 帳號';
+
+  @override
+  String get appAccountLoginSubtitle => '使用真實 APP 帳號作為 IM 發言身份。';
+
+  @override
+  String get appAccountEmail => 'APP 帳號郵箱';
+
+  @override
+  String get appAccountEmailRequired => '請輸入 APP 帳號郵箱。';
+
+  @override
+  String get appAccountPassword => 'APP 帳號密碼';
+
+  @override
+  String get appAccountPasswordRequired => '請輸入 APP 帳號密碼。';
+
+  @override
+  String get forceAppAccountLogin => '強制登入';
+
+  @override
+  String get forceAppAccountLoginHint => '僅在服務端提示設備已綁定時使用。';
+
+  @override
+  String get cancel => '取消';
+
+  @override
+  String get signInAppAccount => '登入 APP 帳號';
 
   @override
   String get searchUserHint => '搜尋 UID、暱稱或郵箱';

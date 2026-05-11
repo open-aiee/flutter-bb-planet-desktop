@@ -9,5 +9,7 @@ void main() {
 
     expect(find.text('BB Planet Chat Ops'), findsOneWidget);
     expect(find.text('Operator account'), findsOneWidget);
+    expect(find.text('Google code (if required)'), findsOneWidget);
+    expect(find.text('Development: enter workspace'), findsOneWidget);
   });
 }

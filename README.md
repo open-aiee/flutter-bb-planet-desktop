@@ -65,6 +65,42 @@ flutter run -d macos \
   --dart-define=IM_SOCKET_URL=https://microblueplanet.com
 ```
 
+也可以使用 `APP_ENV` 切换默认环境：
+
+```bash
+# 本地环境，默认值
+flutter run -d macos --dart-define=APP_ENV=local
+
+# 测试环境
+flutter run -d macos --dart-define=APP_ENV=test
+
+# 生产环境
+flutter run -d macos --dart-define=APP_ENV=prod
+```
+
+当前内置默认值：
+
+| APP_ENV | ADMIN_API_BASE_URL | APP_API_BASE_URL | IM_SOCKET_URL |
+| --- | --- | --- | --- |
+| local | `http://192.168.0.101:31111` | `http://192.168.0.101:31110` | `http://192.168.0.101:31110` |
+| test | `https://microblueplanet.com/beep-admin` | `https://microblueplanet.com/beep-user` | `https://microblueplanet.com` |
+| prod | `https://beepbeepplanet.com/beep-admin` | `https://beepbeepplanet.com/beep-user` | `https://beepbeepplanet.com` |
+
+本地环境默认允许跳过后台登录进入工作台，便于先开发主页和 user 端能力。其他环境默认不允许。也可以显式覆盖：
+
+```bash
+flutter run -d macos --dart-define=ALLOW_AUTH_BYPASS=true
+```
+
+如果只启动了本地 `beep-admin`，但 APP 账号登录希望走测试服 `beep-user`，可以混合覆盖：
+
+```bash
+flutter run -d macos \
+  --dart-define=ADMIN_API_BASE_URL=http://192.168.0.101:31111 \
+  --dart-define=APP_API_BASE_URL=https://microblueplanet.com/beep-user \
+  --dart-define=IM_SOCKET_URL=https://microblueplanet.com
+```
+
 ## 关联文档
 
 - `/Users/open/Desktop/work/bb-planet/bb-planet-command-center/doc/CHAT-OPS-DESKTOP-2026-05-10/DESKTOP-CHAT-OPS-REQUIREMENTS.md`

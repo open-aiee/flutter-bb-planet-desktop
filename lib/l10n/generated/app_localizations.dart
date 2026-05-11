@@ -117,17 +117,41 @@ abstract class AppLocalizations {
   /// **'Operator account'**
   String get operatorAccount;
 
+  /// No description provided for @operatorAccountRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter the operator account.'**
+  String get operatorAccountRequired;
+
   /// No description provided for @password.
   ///
   /// In en, this message translates to:
   /// **'Password'**
   String get password;
 
+  /// No description provided for @passwordRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter the password.'**
+  String get passwordRequired;
+
+  /// No description provided for @googleCodeOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Google code (if required)'**
+  String get googleCodeOptional;
+
   /// No description provided for @signIn.
   ///
   /// In en, this message translates to:
   /// **'Sign in'**
   String get signIn;
+
+  /// No description provided for @devEnterWorkspace.
+  ///
+  /// In en, this message translates to:
+  /// **'Development: enter workspace'**
+  String get devEnterWorkspace;
 
   /// No description provided for @leftPanelTitle.
   ///
@@ -170,6 +194,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add APP account'**
   String get addAppAccount;
+
+  /// No description provided for @switchAppAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch APP account'**
+  String get switchAppAccount;
+
+  /// No description provided for @signingInAppAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Signing in...'**
+  String get signingInAppAccount;
+
+  /// No description provided for @appAccountLoginTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in APP account'**
+  String get appAccountLoginTitle;
+
+  /// No description provided for @appAccountLoginSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a real APP account as the speaking identity for IM.'**
+  String get appAccountLoginSubtitle;
+
+  /// No description provided for @appAccountEmail.
+  ///
+  /// In en, this message translates to:
+  /// **'APP account email'**
+  String get appAccountEmail;
+
+  /// No description provided for @appAccountEmailRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter the APP account email.'**
+  String get appAccountEmailRequired;
+
+  /// No description provided for @appAccountPassword.
+  ///
+  /// In en, this message translates to:
+  /// **'APP account password'**
+  String get appAccountPassword;
+
+  /// No description provided for @appAccountPasswordRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter the APP account password.'**
+  String get appAccountPasswordRequired;
+
+  /// No description provided for @forceAppAccountLogin.
+  ///
+  /// In en, this message translates to:
+  /// **'Force login'**
+  String get forceAppAccountLogin;
+
+  /// No description provided for @forceAppAccountLoginHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this only when the server says the device is already bound.'**
+  String get forceAppAccountLoginHint;
+
+  /// No description provided for @cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// No description provided for @signInAppAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in APP account'**
+  String get signInAppAccount;
 
   /// No description provided for @searchUserHint.
   ///

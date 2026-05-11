@@ -19,10 +19,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get operatorAccount => 'Operator account';
 
   @override
+  String get operatorAccountRequired => 'Please enter the operator account.';
+
+  @override
   String get password => 'Password';
 
   @override
+  String get passwordRequired => 'Please enter the password.';
+
+  @override
+  String get googleCodeOptional => 'Google code (if required)';
+
+  @override
   String get signIn => 'Sign in';
+
+  @override
+  String get devEnterWorkspace => 'Development: enter workspace';
 
   @override
   String get leftPanelTitle => 'Accounts';
@@ -44,6 +56,45 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addAppAccount => 'Add APP account';
+
+  @override
+  String get switchAppAccount => 'Switch APP account';
+
+  @override
+  String get signingInAppAccount => 'Signing in...';
+
+  @override
+  String get appAccountLoginTitle => 'Sign in APP account';
+
+  @override
+  String get appAccountLoginSubtitle =>
+      'Use a real APP account as the speaking identity for IM.';
+
+  @override
+  String get appAccountEmail => 'APP account email';
+
+  @override
+  String get appAccountEmailRequired => 'Please enter the APP account email.';
+
+  @override
+  String get appAccountPassword => 'APP account password';
+
+  @override
+  String get appAccountPasswordRequired =>
+      'Please enter the APP account password.';
+
+  @override
+  String get forceAppAccountLogin => 'Force login';
+
+  @override
+  String get forceAppAccountLoginHint =>
+      'Use this only when the server says the device is already bound.';
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get signInAppAccount => 'Sign in APP account';
 
   @override
   String get searchUserHint => 'Search UID, nickname, or email';
