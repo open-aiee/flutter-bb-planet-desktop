@@ -1,0 +1,19 @@
+{
+  "appTitle": "BB Planet 運營聊天工作台",
+  "operatorLoginSubtitle": "先使用管理後台帳號登入，再連接真實 APP 帳號進行 1 對 1 聊天運營。",
+  "operatorAccount": "操作人帳號",
+  "password": "密碼",
+  "signIn": "登入",
+  "leftPanelTitle": "帳號",
+  "middlePanelTitle": "會話",
+  "rightPanelTitle": "聊天",
+  "operatorIdentity": "操作人身份",
+  "speakingIdentity": "發言身份",
+  "noAppAccountSelected": "尚未選擇 APP 帳號",
+  "addAppAccount": "新增 APP 帳號",
+  "searchUserHint": "搜尋 UID、暱稱或郵箱",
+  "selectCompanionFirst": "請先選擇陪聊帳號。",
+  "identityGuardHint": "發送前請確認誰在發言、誰在接收訊息。",
+  "selectConversationFirst": "請選擇聊天對象以開啟 1 對 1 會話。",
+  "messageInputDisabledHint": "選擇聊天對象後才可以輸入訊息。"
+}
