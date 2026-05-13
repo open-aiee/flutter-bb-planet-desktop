@@ -97,6 +97,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signInAppAccount => 'Sign in APP account';
 
   @override
+  String get appAccountHistoryTitle => 'Real APP account list';
+
+  @override
+  String get appAccountHistorySubtitle =>
+      'Choose the real APP account used as the current chat identity.';
+
+  @override
+  String get appAccountHistoryEmpty =>
+      'No real APP accounts have been signed in on this device yet.';
+
+  @override
+  String get appAccountStatusOnline => 'Online';
+
+  @override
+  String get appAccountStatusSwitch => 'Switch';
+
+  @override
+  String get appAccountStatusOffline => 'Offline';
+
+  @override
   String get searchUserHint => 'Search UID, nickname, or email';
 
   @override

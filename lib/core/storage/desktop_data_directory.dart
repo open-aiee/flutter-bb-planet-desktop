@@ -9,34 +9,31 @@ class DesktopDataDirectory {
   static const appFolderName = 'BB Planet Desktop';
 
   static Future<Directory> resolve() async {
+    if (Platform.isMacOS) {
+      final home = _macOsUserHome();
+      if (home != null && home.trim().isNotEmpty) {
+        return Directory(
+          p.join(home.trim(), 'Library', 'Application Support', appFolderName),
+        );
+      }
+      final user = Platform.environment['USER']?.trim();
+      if (user != null && user.isNotEmpty) {
+        return Directory(
+          p.join(
+            '/Users',
+            user,
+            'Library',
+            'Application Support',
+            appFolderName,
+          ),
+        );
+      }
+      throw StateError('Unable to resolve macOS user data directory.');
+    }
+
     final explicit = Platform.environment['BB_PLANET_DESKTOP_DATA_DIR'];
     if (explicit != null && explicit.trim().isNotEmpty) {
       return Directory(explicit.trim());
-    }
-
-    if (Platform.isMacOS) {
-      final home = Platform.environment['HOME'];
-      if (home != null && home.trim().isNotEmpty) {
-        final directory = Directory(
-          p.join(home.trim(), 'Library', 'Application Support', appFolderName),
-        );
-        await _copyMissingFiles(
-          from: Directory(
-            p.join(
-              home.trim(),
-              'Library',
-              'Containers',
-              'com.example.flutterBbPlanetDesktop',
-              'Data',
-              'Library',
-              'Application Support',
-              appFolderName,
-            ),
-          ),
-          to: directory,
-        );
-        return directory;
-      }
     }
 
     if (Platform.isWindows) {
@@ -63,25 +60,17 @@ class DesktopDataDirectory {
     return Directory(p.join(fallback.path, appFolderName));
   }
 
-  static Future<void> _copyMissingFiles({
-    required Directory from,
-    required Directory to,
-  }) async {
-    if (!await from.exists()) {
-      return;
+  static String? _macOsUserHome() {
+    final home = Platform.environment['HOME']?.trim();
+    if (home == null || home.isEmpty) {
+      return null;
     }
 
-    await for (final entity in from.list(recursive: true)) {
-      if (entity is! File) {
-        continue;
-      }
-      final relativePath = p.relative(entity.path, from: from.path);
-      final target = File(p.join(to.path, relativePath));
-      if (await target.exists()) {
-        continue;
-      }
-      await target.parent.create(recursive: true);
-      await entity.copy(target.path);
+    const containerMarker = '/Library/Containers/';
+    final markerIndex = home.indexOf(containerMarker);
+    if (markerIndex > 0) {
+      return home.substring(0, markerIndex);
     }
+    return home;
   }
 }

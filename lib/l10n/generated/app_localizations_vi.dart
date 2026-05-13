@@ -97,6 +97,26 @@ class AppLocalizationsVi extends AppLocalizations {
   String get signInAppAccount => 'Đăng nhập tài khoản APP';
 
   @override
+  String get appAccountHistoryTitle => 'Danh sách tài khoản APP thật';
+
+  @override
+  String get appAccountHistorySubtitle =>
+      'Chọn tài khoản APP thật dùng làm danh tính chat hiện tại.';
+
+  @override
+  String get appAccountHistoryEmpty =>
+      'Thiết bị này chưa đăng nhập tài khoản APP thật nào.';
+
+  @override
+  String get appAccountStatusOnline => 'Online';
+
+  @override
+  String get appAccountStatusSwitch => 'Đổi';
+
+  @override
+  String get appAccountStatusOffline => 'Offline';
+
+  @override
   String get searchUserHint => 'Tìm UID, biệt danh hoặc email';
 
   @override

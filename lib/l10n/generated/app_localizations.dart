@@ -269,6 +269,42 @@ abstract class AppLocalizations {
   /// **'Sign in APP account'**
   String get signInAppAccount;
 
+  /// No description provided for @appAccountHistoryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Real APP account list'**
+  String get appAccountHistoryTitle;
+
+  /// No description provided for @appAccountHistorySubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the real APP account used as the current chat identity.'**
+  String get appAccountHistorySubtitle;
+
+  /// No description provided for @appAccountHistoryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No real APP accounts have been signed in on this device yet.'**
+  String get appAccountHistoryEmpty;
+
+  /// No description provided for @appAccountStatusOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get appAccountStatusOnline;
+
+  /// No description provided for @appAccountStatusSwitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch'**
+  String get appAccountStatusSwitch;
+
+  /// No description provided for @appAccountStatusOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get appAccountStatusOffline;
+
   /// No description provided for @searchUserHint.
   ///
   /// In en, this message translates to:

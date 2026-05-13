@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 
 import '../../../core/security/secure_store_provider.dart';
+import '../../../core/security/secure_store.dart';
 import '../../../core/storage/encrypted_cache_store.dart';
 import '../domain/local_chat_message.dart';
 
@@ -12,11 +14,7 @@ final localChatMessageStoreProvider = FutureProvider<LocalChatMessageStore>((
   ref,
 ) async {
   final secureStore = ref.read(secureStoreProvider);
-  var cacheKey = await secureStore.read('chat.messageCache.encryptionKey');
-  if (cacheKey == null || cacheKey.isEmpty) {
-    cacheKey = _randomCacheKey();
-    await secureStore.write('chat.messageCache.encryptionKey', cacheKey);
-  }
+  final cacheKey = await readOrCreateMessageCacheKey(secureStore);
 
   final box = await EncryptedCacheStore(
     encryptionKey: EncryptedCacheStore.normalizeKey(cacheKey),
@@ -24,13 +22,30 @@ final localChatMessageStoreProvider = FutureProvider<LocalChatMessageStore>((
   return LocalChatMessageStore(box);
 });
 
+Future<String> readOrCreateMessageCacheKey(SecureStore secureStore) async {
+  var cacheKey = await secureStore.read('chat.messageCache.encryptionKey');
+  if (cacheKey == null || cacheKey.isEmpty) {
+    cacheKey = _randomCacheKey();
+    await secureStore.write('chat.messageCache.encryptionKey', cacheKey);
+  }
+  return cacheKey;
+}
+
 class LocalChatMessageStore {
   const LocalChatMessageStore(this._box);
 
   final Box<String> _box;
 
   Future<void> upsert(LocalChatMessage message) async {
-    await _box.put(_storageKey(message), jsonEncode(message.toJson()));
+    final key = _storageKey(message);
+    await _box.put(key, jsonEncode(message.toJson()));
+    await _box.flush();
+    debugPrint(
+      '[CHAT_OPS][LOCAL][MESSAGE_STORE] upsert '
+      'sender=${message.appUserId} peer=${message.peerUserId} '
+      'local=${message.localId} server=${message.serverMessageId} '
+      'boxLength=${_box.length}',
+    );
   }
 
   Future<List<LocalChatMessage>> loadConversation({

@@ -13,9 +13,12 @@ import '../../../core/websocket/im_socket_client.dart' show ImSyncRecordAck;
 import '../../../l10n/generated/app_localizations.dart';
 import '../../app_account_auth/application/app_account_auth_controller.dart';
 import '../../app_account_auth/domain/app_user_session.dart';
-import '../../app_account_auth/presentation/app_account_panel.dart';
+import '../../app_account_auth/presentation/app_account_history_dialog.dart';
+import '../../messages/data/chat_conversation_api.dart';
 import '../../messages/data/direct_chat_api.dart';
+import '../../messages/data/local_chat_peer_profile_store.dart';
 import '../../messages/data/local_chat_message_store.dart';
+import '../../messages/domain/local_chat_peer_profile.dart';
 import '../../messages/domain/local_chat_message.dart';
 import '../../operator_auth/application/operator_auth_controller.dart';
 import '../../recommended_users/data/recommended_user_api.dart';
@@ -46,10 +49,11 @@ class ChatOpsWorkspaceScreen extends ConsumerWidget {
         appAccountSession: appAccountState.session,
         appAccountOnline: appAccountState.isAuthenticated,
         appAccountBusy: appAccountState.isLoading,
+        appAccountAvatarUrl: appAccountState.session?.avatarUrl,
         onAppAccountTap: () => showDialog<void>(
           context: context,
           barrierDismissible: false,
-          builder: (_) => const AppAccountLoginDialog(),
+          builder: (_) => const AppAccountHistoryDialog(),
         ),
         onSettingsTap: () => showDialog<void>(
           context: context,
@@ -67,6 +71,7 @@ class _HomeScreenMainWindow extends ConsumerStatefulWidget {
     required this.appAccountSession,
     required this.appAccountOnline,
     required this.appAccountBusy,
+    required this.appAccountAvatarUrl,
     required this.onAppAccountTap,
     required this.onSettingsTap,
   });
@@ -76,6 +81,7 @@ class _HomeScreenMainWindow extends ConsumerStatefulWidget {
   final AppUserSession? appAccountSession;
   final bool appAccountOnline;
   final bool appAccountBusy;
+  final String? appAccountAvatarUrl;
   final VoidCallback onAppAccountTap;
   final VoidCallback onSettingsTap;
 
@@ -89,6 +95,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   int _selectedConversationIndex = 0;
   bool _isConversationLoading = false;
   bool _isSearchLoading = false;
+  bool _didShowAccountHistory = false;
   int _loadRequestId = 0;
   int _searchRequestId = 0;
   Timer? _searchDebounce;
@@ -97,13 +104,16 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   bool _isActiveConversationSyncing = false;
   String _searchQuery = '';
   String? _searchNotice;
+  String? _chatNotice;
   final Map<String, String> _drafts = {};
+  List<_Conversation> _chatConversations = const [];
   List<_Conversation> _searchConversations = const [];
   final Map<_RailTab, List<_Conversation>> _remoteConversations = {};
   final Map<_RailTab, String> _remoteNotices = {};
   final Map<int, int> _directRoomIds = {};
   final Map<String, List<LocalChatMessage>> _storedMessages = {};
   final Map<int, LocalChatMessage> _recentMessagesByPeer = {};
+  final Map<int, LocalChatPeerProfile> _peerProfiles = {};
 
   @override
   void initState() {
@@ -115,6 +125,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncImSocketSession();
       unawaited(_loadRecentConversationPreviews());
+      unawaited(_loadChatConversations());
+      _showAccountHistoryOnOpen();
     });
   }
 
@@ -123,8 +135,13 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.appAccountSession?.certificate !=
         widget.appAccountSession?.certificate) {
+      _resetAccountScopedState();
       _syncImSocketSession();
       unawaited(_loadRecentConversationPreviews());
+      unawaited(_loadChatConversations());
+      if (_selectedTab != _RailTab.chats) {
+        unawaited(_loadRemoteUsersForTab(_selectedTab));
+      }
     }
   }
 
@@ -168,6 +185,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             appAccountName: widget.appAccountName,
             appAccountOnline: widget.appAccountOnline,
             appAccountBusy: widget.appAccountBusy,
+            appAccountAvatarUrl: widget.appAccountAvatarUrl,
             selectedTab: _selectedTab,
             selectedConversationIndex: safeSelectedIndex,
             conversations: conversations,
@@ -208,24 +226,38 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   }
 
   Future<void> _selectTab(_RailTab tab) async {
-    if (tab == _selectedTab && !_isConversationLoading) {
+    if (tab == _selectedTab &&
+        !_isConversationLoading &&
+        (tab == _RailTab.chats
+            ? _chatConversations.isNotEmpty
+            : (_remoteConversations[tab]?.isNotEmpty ?? false))) {
+      return;
+    }
+
+    setState(() {
+      _selectedTab = tab;
+      _selectedConversationIndex = 0;
+    });
+
+    if (tab == _RailTab.chats) {
+      unawaited(_loadChatConversations());
+      return;
+    }
+
+    await _loadRemoteUsersForTab(tab);
+  }
+
+  Future<void> _loadRemoteUsersForTab(_RailTab tab) async {
+    if (tab == _RailTab.chats) {
       return;
     }
 
     final requestId = ++_loadRequestId;
     setState(() {
-      _selectedTab = tab;
-      _selectedConversationIndex = 0;
-      _isConversationLoading = tab != _RailTab.chats;
+      _isConversationLoading = true;
       _remoteNotices.remove(tab);
-      if (tab != _RailTab.chats) {
-        _remoteConversations[tab] = const [];
-      }
+      _remoteConversations[tab] = const [];
     });
-
-    if (tab == _RailTab.chats) {
-      return;
-    }
 
     final l10n = AppLocalizations.of(context);
     final session = widget.appAccountSession;
@@ -257,6 +289,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       if (!mounted || requestId != _loadRequestId) {
         return;
       }
+      unawaited(_persistPeerProfiles(users));
       final conversations = _recommendedConversationsForTab(l10n, tab, users);
       setState(() {
         _remoteConversations[tab] = conversations;
@@ -340,6 +373,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           query != _searchQuery.trim()) {
         return;
       }
+      unawaited(_persistPeerProfiles(users));
       final conversations = users
           .map(
             (user) =>
@@ -371,7 +405,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     _RailTab tab,
   ) {
     return switch (tab) {
-      _RailTab.chats => _localRecentConversations(),
+      _RailTab.chats => _chatConversationsWithLocalFallback(),
       _RailTab.updates => _remoteConversations[tab] ?? const [],
       _RailTab.communities => _remoteConversations[tab] ?? const [],
       _RailTab.calls => _remoteConversations[tab] ?? const [],
@@ -384,6 +418,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     }
     if (_selectedTab == _RailTab.chats && widget.appAccountSession == null) {
       return l10n.workspaceUsersLoginRequired;
+    }
+    if (_selectedTab == _RailTab.chats) {
+      return _chatNotice ?? l10n.workspaceUsersEmpty;
     }
     return _remoteNotices[_selectedTab] ?? l10n.workspaceUsersEmpty;
   }
@@ -436,18 +473,38 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         .toList();
   }
 
+  List<_Conversation> _chatConversationsWithLocalFallback() {
+    final localConversations = _localRecentConversations();
+    if (_chatConversations.isEmpty) {
+      return localConversations;
+    }
+    final remotePeerIds = _chatConversations
+        .map((conversation) => conversation.targetUserId)
+        .whereType<int>()
+        .toSet();
+    return [
+      ..._chatConversations,
+      ...localConversations.where(
+        (conversation) => !remotePeerIds.contains(conversation.targetUserId),
+      ),
+    ];
+  }
+
   List<_Conversation> _localRecentConversations() {
     final latestMessages = _recentMessagesByPeer.values.toList()
       ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
     return latestMessages.map((message) {
       final peerUserId = message.peerUserId;
-      final label = 'Beepian$peerUserId';
+      final profile = _peerProfiles[peerUserId];
+      final profileName = profile?.displayName.trim() ?? '';
+      final label = profileName.isEmpty ? 'Beepian$peerUserId' : profileName;
       return _Conversation(
         name: label,
         message: _conversationPreviewText(message.text),
         time: _formatConversationTime(message.createdAt),
         color: _ConversationData.avatarColorFor(peerUserId),
         emoji: label.characters.first.toUpperCase(),
+        avatarUrl: profile?.avatarUrl,
         targetUserId: peerUserId,
         roomId: message.roomId,
         delivered:
@@ -979,12 +1036,19 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     final session = widget.appAccountSession;
     if (session == null) {
       if (mounted) {
-        setState(_recentMessagesByPeer.clear);
+        setState(() {
+          _recentMessagesByPeer.clear();
+          _peerProfiles.clear();
+        });
       }
       return;
     }
     final store = await ref.read(localChatMessageStoreProvider.future);
+    final profileStore = await ref.read(
+      localChatPeerProfileStoreProvider.future,
+    );
     final latest = await store.loadLatestByAppUser(appUserId: session.id);
+    final profiles = await profileStore.loadByAppUser(appUserId: session.id);
     if (!mounted || widget.appAccountSession?.id != session.id) {
       return;
     }
@@ -992,10 +1056,87 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _recentMessagesByPeer
         ..clear()
         ..addAll(latest);
+      _peerProfiles
+        ..clear()
+        ..addAll(profiles);
     });
     final selected = _selectedConversation();
     if (selected != null && selected.targetUserId != null) {
       _activateConversation(selected);
+    }
+  }
+
+  Future<void> _loadChatConversations() async {
+    final requestId = ++_loadRequestId;
+    final l10n = AppLocalizations.of(context);
+    final session = widget.appAccountSession;
+    final requestLang = _requestLangOf(context);
+    if (session == null) {
+      if (mounted) {
+        setState(() {
+          _chatConversations = const [];
+          _chatNotice = l10n.workspaceUsersLoginRequired;
+          if (_selectedTab == _RailTab.chats) {
+            _isConversationLoading = false;
+          }
+        });
+      }
+      return;
+    }
+
+    if (_selectedTab == _RailTab.chats && mounted) {
+      setState(() {
+        _isConversationLoading = true;
+        _chatNotice = null;
+      });
+    }
+
+    try {
+      final deviceId = await DesktopDeviceId(
+        secureStore: ref.read(secureStoreProvider),
+      ).getOrCreate();
+      final records = await ref
+          .read(chatConversationApiProvider)
+          .fetchConversations(
+            certificate: session.certificate,
+            deviceId: deviceId,
+            lang: requestLang,
+          );
+      if (!mounted ||
+          requestId != _loadRequestId ||
+          widget.appAccountSession?.id != session.id) {
+        return;
+      }
+      unawaited(_persistChatConversationProfiles(records));
+      final conversations = records
+          .map(_ConversationData.fromChatConversation)
+          .toList();
+      setState(() {
+        _chatConversations = conversations;
+        _chatNotice = conversations.isEmpty ? l10n.workspaceUsersEmpty : null;
+        if (_selectedTab == _RailTab.chats) {
+          _isConversationLoading = false;
+          _selectedConversationIndex = conversations.isEmpty
+              ? 0
+              : _selectedConversationIndex.clamp(0, conversations.length - 1);
+        }
+      });
+      if (_selectedTab == _RailTab.chats && conversations.isNotEmpty) {
+        _activateConversation(conversations[_selectedConversationIndex]);
+      }
+    } catch (_) {
+      if (!mounted ||
+          requestId != _loadRequestId ||
+          widget.appAccountSession?.id != session.id) {
+        return;
+      }
+      setState(() {
+        _chatConversations = const [];
+        _chatNotice = l10n.workspaceUsersLoadFailed;
+        if (_selectedTab == _RailTab.chats) {
+          _isConversationLoading = false;
+        }
+      });
     }
   }
 
@@ -1007,6 +1148,71 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     if (current == null || message.createdAt.isAfter(current.createdAt)) {
       _recentMessagesByPeer[message.peerUserId] = message;
     }
+  }
+
+  Future<void> _persistPeerProfiles(List<RecommendedUser> users) async {
+    final session = widget.appAccountSession;
+    if (session == null || users.isEmpty) {
+      return;
+    }
+    final store = await ref.read(localChatPeerProfileStoreProvider.future);
+    final now = DateTime.now();
+    final profiles = <int, LocalChatPeerProfile>{};
+    for (final user in users) {
+      if (user.id <= 0) {
+        continue;
+      }
+      final profile = LocalChatPeerProfile(
+        appUserId: session.id,
+        peerUserId: user.id,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+        updatedAt: now,
+      );
+      await store.upsert(profile);
+      profiles[user.id] = profile;
+    }
+    if (!mounted ||
+        profiles.isEmpty ||
+        widget.appAccountSession?.id != session.id) {
+      return;
+    }
+    setState(() => _peerProfiles.addAll(profiles));
+  }
+
+  Future<void> _persistChatConversationProfiles(
+    List<ChatConversationSummary> conversations,
+  ) async {
+    final session = widget.appAccountSession;
+    if (session == null || conversations.isEmpty) {
+      return;
+    }
+    final store = await ref.read(localChatPeerProfileStoreProvider.future);
+    final now = DateTime.now();
+    final profiles = <int, LocalChatPeerProfile>{};
+    for (final conversation in conversations) {
+      if (conversation.peerUserId <= 0) {
+        continue;
+      }
+      final profile = LocalChatPeerProfile(
+        appUserId: session.id,
+        peerUserId: conversation.peerUserId,
+        displayName: conversation.displayName,
+        avatarUrl: conversation.roomImg,
+        updatedAt: now,
+      );
+      await store.upsert(profile);
+      profiles[conversation.peerUserId] = profile;
+      if (conversation.roomId > 0) {
+        _directRoomIds[conversation.peerUserId] = conversation.roomId;
+      }
+    }
+    if (!mounted ||
+        profiles.isEmpty ||
+        widget.appAccountSession?.id != session.id) {
+      return;
+    }
+    setState(() => _peerProfiles.addAll(profiles));
   }
 
   String _conversationPreviewText(String text) {
@@ -1033,6 +1239,40 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         .read(imSessionManagerProvider)
         .start(certificate: session.certificate.trim());
   }
+
+  void _resetAccountScopedState() {
+    _searchDebounce?.cancel();
+    _activeConversationSyncTimer?.cancel();
+    setState(() {
+      _selectedConversationIndex = 0;
+      _isConversationLoading = false;
+      _isSearchLoading = false;
+      _isActiveConversationSyncing = false;
+      _searchQuery = '';
+      _searchNotice = null;
+      _chatNotice = null;
+      _chatConversations = const [];
+      _searchConversations = const [];
+      _remoteConversations.clear();
+      _remoteNotices.clear();
+      _directRoomIds.clear();
+      _storedMessages.clear();
+      _recentMessagesByPeer.clear();
+      _peerProfiles.clear();
+    });
+  }
+
+  void _showAccountHistoryOnOpen() {
+    if (_didShowAccountHistory || !mounted) {
+      return;
+    }
+    _didShowAccountHistory = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AppAccountHistoryDialog(),
+    );
+  }
 }
 
 class _LeftSection extends StatelessWidget {
@@ -1041,6 +1281,7 @@ class _LeftSection extends StatelessWidget {
     required this.appAccountName,
     required this.appAccountOnline,
     required this.appAccountBusy,
+    required this.appAccountAvatarUrl,
     required this.selectedTab,
     required this.selectedConversationIndex,
     required this.conversations,
@@ -1059,6 +1300,7 @@ class _LeftSection extends StatelessWidget {
   final String appAccountName;
   final bool appAccountOnline;
   final bool appAccountBusy;
+  final String? appAccountAvatarUrl;
   final _RailTab selectedTab;
   final int selectedConversationIndex;
   final List<_Conversation> conversations;
@@ -1083,6 +1325,7 @@ class _LeftSection extends StatelessWidget {
             appAccountName: appAccountName,
             appAccountOnline: appAccountOnline,
             appAccountBusy: appAccountBusy,
+            appAccountAvatarUrl: appAccountAvatarUrl,
             selectedTab: selectedTab,
             onTabSelected: onTabSelected,
             onAppAccountTap: onAppAccountTap,
@@ -1114,6 +1357,7 @@ class _NavigationRail extends StatelessWidget {
     required this.appAccountName,
     required this.appAccountOnline,
     required this.appAccountBusy,
+    required this.appAccountAvatarUrl,
     required this.selectedTab,
     required this.onTabSelected,
     required this.onAppAccountTap,
@@ -1125,6 +1369,7 @@ class _NavigationRail extends StatelessWidget {
   final String appAccountName;
   final bool appAccountOnline;
   final bool appAccountBusy;
+  final String? appAccountAvatarUrl;
   final _RailTab selectedTab;
   final ValueChanged<_RailTab> onTabSelected;
   final VoidCallback onAppAccountTap;
@@ -1199,6 +1444,7 @@ class _NavigationRail extends StatelessWidget {
                   label: appAccountOnline ? appAccountName : operatorName,
                   online: appAccountOnline,
                   busy: appAccountBusy,
+                  avatarUrl: appAccountAvatarUrl,
                 ),
               ),
             ),
@@ -1406,11 +1652,13 @@ class _AccountAvatar extends StatelessWidget {
     required this.label,
     required this.online,
     required this.busy,
+    this.avatarUrl,
   });
 
   final String label;
   final bool online;
   final bool busy;
+  final String? avatarUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -1422,6 +1670,7 @@ class _AccountAvatar extends StatelessWidget {
               .take(2)
               .map((part) => part.characters.first.toUpperCase())
               .join();
+    final url = avatarUrl?.trim() ?? '';
 
     return Stack(
       children: [
@@ -1429,15 +1678,19 @@ class _AccountAvatar extends StatelessWidget {
           width: 49,
           height: 49,
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xffff8a68), Color(0xffdd3e84)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            gradient: url.isEmpty
+                ? const LinearGradient(
+                    colors: [Color(0xffff8a68), Color(0xffdd3e84)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  )
+                : null,
+            color: url.isEmpty ? null : const Color(0xffd9c2a6),
             borderRadius: BorderRadius.circular(15),
             border: Border.all(color: const Color(0x7ae4e4e4)),
           ),
           alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
           child: busy
               ? const SizedBox(
                   width: 19,
@@ -1445,6 +1698,21 @@ class _AccountAvatar extends StatelessWidget {
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: Colors.white,
+                  ),
+                )
+              : url.isNotEmpty
+              ? Image.network(
+                  url,
+                  width: 49,
+                  height: 49,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Text(
+                    initials,
+                    style: const TextStyle(
+                      color: Color(0xff54656f),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 )
               : Text(
@@ -2900,6 +3168,27 @@ class _ConversationData {
       avatarUrl: user.avatarUrl,
       targetUserId: user.id,
       roomId: null,
+      messages: const [],
+    );
+  }
+
+  static _Conversation fromChatConversation(
+    ChatConversationSummary conversation,
+  ) {
+    final displayName = conversation.displayName;
+    final initial = displayName.characters.isEmpty
+        ? '#'
+        : displayName.characters.first.toUpperCase();
+    return _Conversation(
+      name: displayName,
+      message: '',
+      time: '',
+      color: avatarColorFor(conversation.peerUserId),
+      emoji: initial,
+      avatarUrl: conversation.roomImg,
+      targetUserId: conversation.peerUserId,
+      roomId: conversation.roomId,
+      pinned: conversation.topStatus == 1,
       messages: const [],
     );
   }

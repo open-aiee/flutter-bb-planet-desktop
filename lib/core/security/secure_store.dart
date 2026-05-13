@@ -14,7 +14,12 @@ class SecureStore {
 
   Future<String?> read(String key) async {
     try {
-      return await _storage.read(key: key);
+      final value = await _storage.read(key: key);
+      if (value != null) {
+        return value;
+      }
+      final values = await _readFallbackValues();
+      return values[key];
     } catch (_) {
       final values = await _readFallbackValues();
       return values[key];
@@ -24,23 +29,23 @@ class SecureStore {
   Future<void> write(String key, String value) async {
     try {
       await _storage.write(key: key, value: value);
-      return;
     } catch (_) {
-      final values = await _readFallbackValues();
-      values[key] = value;
-      await _writeFallbackValues(values);
+      // Keep the file fallback below as the desktop source of recovery.
     }
+    final values = await _readFallbackValues();
+    values[key] = value;
+    await _writeFallbackValues(values);
   }
 
   Future<void> delete(String key) async {
     try {
       await _storage.delete(key: key);
-      return;
     } catch (_) {
-      final values = await _readFallbackValues();
-      values.remove(key);
-      await _writeFallbackValues(values);
+      // Keep deleting the fallback copy below.
     }
+    final values = await _readFallbackValues();
+    values.remove(key);
+    await _writeFallbackValues(values);
   }
 
   Future<File> _fallbackFile() async {

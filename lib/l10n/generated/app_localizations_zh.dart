@@ -93,6 +93,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get signInAppAccount => '登入 APP 帳號';
 
   @override
+  String get appAccountHistoryTitle => '運營真實 APP 帳號列表';
+
+  @override
+  String get appAccountHistorySubtitle => '選擇當前用於聊天發言的真實 APP 帳號。';
+
+  @override
+  String get appAccountHistoryEmpty => '這台設備還沒有登入過真實 APP 帳號。';
+
+  @override
+  String get appAccountStatusOnline => '在線';
+
+  @override
+  String get appAccountStatusSwitch => '切換';
+
+  @override
+  String get appAccountStatusOffline => '離線';
+
+  @override
   String get searchUserHint => '搜尋 UID、暱稱或郵箱';
 
   @override
@@ -309,6 +327,24 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get signInAppAccount => '登入 APP 帳號';
+
+  @override
+  String get appAccountHistoryTitle => '運營真實 APP 帳號列表';
+
+  @override
+  String get appAccountHistorySubtitle => '選擇當前用於聊天發言的真實 APP 帳號。';
+
+  @override
+  String get appAccountHistoryEmpty => '這台設備還沒有登入過真實 APP 帳號。';
+
+  @override
+  String get appAccountStatusOnline => '在線';
+
+  @override
+  String get appAccountStatusSwitch => '切換';
+
+  @override
+  String get appAccountStatusOffline => '離線';
 
   @override
   String get searchUserHint => '搜尋 UID、暱稱或郵箱';

@@ -14,28 +14,26 @@ Future<void> main(List<String> args) async {
     return;
   }
 
+  final userHome = _macOsUserHome(home);
   final baseDir = args.isNotEmpty
       ? Directory(args.first)
-      : _firstExisting([
-          Directory(
-            p.join(home, 'Library', 'Application Support', 'BB Planet Desktop'),
+      : Directory(
+          p.join(
+            userHome,
+            'Library',
+            'Application Support',
+            'BB Planet Desktop',
           ),
-          Directory(
-            p.join(
-              home,
-              'Library',
-              'Containers',
-              'com.example.flutterBbPlanetDesktop',
-              'Data',
-              'Library',
-              'Application Support',
-              'BB Planet Desktop',
-            ),
-          ),
-        ]);
+        );
   final secureFile = File(p.join(baseDir.path, 'secure_store_fallback.json'));
   final cacheDir = Directory(p.join(baseDir.path, 'cache'));
   final hiveFile = File(p.join(cacheDir.path, 'chat_messages_v1.hive'));
+  final profileHiveFile = File(
+    p.join(cacheDir.path, 'chat_peer_profiles_v1.hive'),
+  );
+  final appAccountHistoryHiveFile = File(
+    p.join(cacheDir.path, 'app_account_login_history_v1.hive'),
+  );
 
   print('baseDir: ${baseDir.path}');
   print('hive: ${hiveFile.existsSync() ? hiveFile.path : 'missing'}');
@@ -101,16 +99,64 @@ Future<void> main(List<String> args) async {
   }
 
   await box.close();
-  await snapshotDir.delete(recursive: true);
-}
-
-Directory _firstExisting(List<Directory> directories) {
-  for (final directory in directories) {
-    if (directory.existsSync()) {
-      return directory;
+  if (profileHiveFile.existsSync()) {
+    final snapshotProfileHive = File(
+      p.join(snapshotDir.path, 'chat_peer_profiles_v1.hive'),
+    );
+    await profileHiveFile.copy(snapshotProfileHive.path);
+    final profileBox = await Hive.openBox<String>(
+      'chat_peer_profiles_v1',
+      encryptionCipher: HiveAesCipher(_normalizeKey(rawKey)),
+    );
+    print('');
+    print('profiles: ${profileBox.length}');
+    for (final raw in profileBox.values) {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        continue;
+      }
+      final profile = decoded.map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+      print(
+        'sender:${profile['appUserId']} -> peer:${profile['peerUserId']} '
+        'name=${profile['displayName']} avatar=${profile['avatarUrl']}',
+      );
+    }
+    await profileBox.close();
+  }
+  if (appAccountHistoryHiveFile.existsSync()) {
+    final rawHistoryKey = secureJson['appAccount.history.encryptionKey']
+        ?.toString();
+    if (rawHistoryKey != null && rawHistoryKey.isNotEmpty) {
+      final snapshotHistoryHive = File(
+        p.join(snapshotDir.path, 'app_account_login_history_v1.hive'),
+      );
+      await appAccountHistoryHiveFile.copy(snapshotHistoryHive.path);
+      final historyBox = await Hive.openBox<String>(
+        'app_account_login_history_v1',
+        encryptionCipher: HiveAesCipher(_normalizeKey(rawHistoryKey)),
+      );
+      print('');
+      print('app account history: ${historyBox.length}');
+      for (final raw in historyBox.values) {
+        final decoded = jsonDecode(raw);
+        if (decoded is! Map) {
+          continue;
+        }
+        final account = decoded.map(
+          (key, value) => MapEntry(key.toString(), value),
+        );
+        print(
+          'id=${account['id']} email=${account['email']} '
+          'avatar=${(account['avatarUrl']?.toString() ?? '').isNotEmpty} '
+          'token=${(account['token']?.toString() ?? '').isNotEmpty}',
+        );
+      }
+      await historyBox.close();
     }
   }
-  return directories.first;
+  await snapshotDir.delete(recursive: true);
 }
 
 List<int> _normalizeKey(String rawKey) {
@@ -121,6 +167,15 @@ List<int> _normalizeKey(String rawKey) {
     }
     return 0;
   });
+}
+
+String _macOsUserHome(String home) {
+  const containerMarker = '/Library/Containers/';
+  final markerIndex = home.indexOf(containerMarker);
+  if (markerIndex > 0) {
+    return home.substring(0, markerIndex);
+  }
+  return home;
 }
 
 DateTime _dateOf(Object? value) {
