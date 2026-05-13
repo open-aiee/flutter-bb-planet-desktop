@@ -275,17 +275,12 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         secureStore: ref.read(secureStoreProvider),
       ).getOrCreate();
       final userApi = ref.read(recommendedUserApiProvider);
-      final users = tab == _RailTab.communities
-          ? await userApi.fetchOnlineUsersFromDynamicPage(
-              certificate: session.certificate,
-              deviceId: deviceId,
-              lang: requestLang,
-            )
-          : await userApi.fetchFriendRecommendations(
-              certificate: session.certificate,
-              deviceId: deviceId,
-              lang: requestLang,
-            );
+      final users = await userApi.fetchUsersFromDynamicPage(
+        certificate: session.certificate,
+        deviceId: deviceId,
+        lang: requestLang,
+        onlyOnline: tab == _RailTab.communities,
+      );
       if (!mounted || requestId != _loadRequestId) {
         return;
       }

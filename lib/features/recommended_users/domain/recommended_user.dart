@@ -37,13 +37,13 @@ class RecommendedUser {
     final user = _asMap(json['user']);
     return RecommendedUser(
       id: _firstNonZeroInt([
-        json['id'],
-        json['userId'],
-        json['uid'],
-        json['fromUserId'],
         user['id'],
         user['userId'],
         user['uid'],
+        json['userId'],
+        json['uid'],
+        json['fromUserId'],
+        json['id'],
       ]),
       nickName: _firstNonEmptyString([
         json['nickName'],
