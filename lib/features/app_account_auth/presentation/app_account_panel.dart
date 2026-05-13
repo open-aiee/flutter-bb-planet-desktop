@@ -87,10 +87,19 @@ class AppAccountLoginDialog extends ConsumerStatefulWidget {
 }
 
 class _AppAccountLoginDialogState extends ConsumerState<AppAccountLoginDialog> {
+  static const _defaultTestEmail = 'p3@qq.com';
+  static const _defaultTestPassword = 'qq111111';
+
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  bool _forceLogin = false;
+  final _emailController = TextEditingController(text: _defaultTestEmail);
+  final _passwordController = TextEditingController(text: _defaultTestPassword);
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSavedLoginCredentials();
+  }
 
   @override
   void dispose() {
@@ -103,22 +112,23 @@ class _AppAccountLoginDialogState extends ConsumerState<AppAccountLoginDialog> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final appAccountState = ref.watch(appAccountAuthControllerProvider);
+    final isLoading = _isSubmitting || appAccountState.isLoading;
 
     return AlertDialog(
       title: Text(l10n.appAccountLoginTitle),
       content: SizedBox(
         width: 420,
+        height: 260,
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(l10n.appAccountLoginSubtitle),
               const SizedBox(height: 18),
               TextFormField(
                 controller: _emailController,
-                enabled: !appAccountState.isLoading,
+                enabled: !isLoading,
                 keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(labelText: l10n.appAccountEmail),
                 validator: (value) =>
@@ -127,22 +137,19 @@ class _AppAccountLoginDialogState extends ConsumerState<AppAccountLoginDialog> {
               const SizedBox(height: 12),
               TextFormField(
                 controller: _passwordController,
-                enabled: !appAccountState.isLoading,
+                enabled: !isLoading,
                 obscureText: true,
                 decoration: InputDecoration(labelText: l10n.appAccountPassword),
                 validator: (value) =>
                     _isBlank(value) ? l10n.appAccountPasswordRequired : null,
                 onFieldSubmitted: (_) => _submit(),
               ),
-              const SizedBox(height: 8),
-              CheckboxListTile(
-                value: _forceLogin,
-                onChanged: appAccountState.isLoading
-                    ? null
-                    : (value) => setState(() => _forceLogin = value ?? false),
-                contentPadding: EdgeInsets.zero,
-                title: Text(l10n.forceAppAccountLogin),
-                subtitle: Text(l10n.forceAppAccountLoginHint),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 76,
+                child: appAccountState.errorMessage == null
+                    ? const SizedBox.shrink()
+                    : _AppAccountError(message: appAccountState.errorMessage!),
               ),
             ],
           ),
@@ -150,20 +157,26 @@ class _AppAccountLoginDialogState extends ConsumerState<AppAccountLoginDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: appAccountState.isLoading
-              ? null
-              : () => Navigator.of(context).pop(),
+          onPressed: isLoading ? null : () => Navigator.of(context).pop(),
           child: Text(l10n.cancel),
         ),
         FilledButton(
-          onPressed: appAccountState.isLoading ? null : _submit,
-          child: appAccountState.isLoading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(l10n.signInAppAccount),
+          onPressed: isLoading ? null : _submit,
+          child: SizedBox(
+            width: 96,
+            child: Center(
+              child: isLoading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.onPrimary,
+                      ),
+                    )
+                  : Text(l10n.signInAppAccount),
+            ),
+          ),
         ),
       ],
     );
@@ -171,19 +184,45 @@ class _AppAccountLoginDialogState extends ConsumerState<AppAccountLoginDialog> {
 
   bool _isBlank(String? value) => value == null || value.trim().isEmpty;
 
+  Future<void> _restoreSavedLoginCredentials() async {
+    final credentials = await ref
+        .read(appAccountAuthControllerProvider.notifier)
+        .readSavedLoginCredentials();
+    if (!mounted || !credentials.isNotEmpty) {
+      return;
+    }
+    _emailController.text = credentials.email;
+    _passwordController.text = credentials.password;
+  }
+
   Future<void> _submit() async {
+    if (_isSubmitting) {
+      return;
+    }
     if (!_formKey.currentState!.validate()) {
       return;
     }
+    FocusScope.of(context).unfocus();
+    setState(() => _isSubmitting = true);
+    final startedAt = DateTime.now();
     final success = await ref
         .read(appAccountAuthControllerProvider.notifier)
         .login(
           email: _emailController.text,
           password: _passwordController.text,
-          forceLogin: _forceLogin,
+          forceLogin: true,
         );
+    final elapsed = DateTime.now().difference(startedAt);
+    const minimumLoadingTime = Duration(milliseconds: 500);
+    if (elapsed < minimumLoadingTime) {
+      await Future<void>.delayed(minimumLoadingTime - elapsed);
+    }
     if (success && mounted) {
       Navigator.of(context).pop();
+      return;
+    }
+    if (mounted) {
+      setState(() => _isSubmitting = false);
     }
   }
 }

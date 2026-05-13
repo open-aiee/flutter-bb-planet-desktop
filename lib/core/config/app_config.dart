@@ -41,35 +41,39 @@ class AppEnvironment {
 
   static String get adminApiBaseUrl {
     if (_adminOverride.isNotEmpty) {
-      return _adminOverride;
+      return _trimTrailingSlash(_adminOverride);
     }
-    return switch (current) {
+    return _trimTrailingSlash(switch (current) {
       'prod' => 'https://beepbeepplanet.com/beep-admin',
       'test' => 'https://microblueplanet.com/beep-admin',
       _ => 'http://192.168.0.101:31111',
-    };
+    });
   }
 
   static String get appApiBaseUrl {
     if (_appOverride.isNotEmpty) {
-      return _appOverride;
+      return _trimTrailingSlash(_appOverride);
     }
-    return switch (current) {
+    return _trimTrailingSlash(switch (current) {
       'prod' => 'https://beepbeepplanet.com/beep-user',
       'test' => 'https://microblueplanet.com/beep-user',
       _ => 'http://192.168.0.101:31110',
-    };
+    });
   }
 
   static String get imSocketUrl {
     if (_socketOverride.isNotEmpty) {
-      return _socketOverride;
+      return _trimTrailingSlash(_socketOverride);
     }
-    return switch (current) {
-      'prod' => 'https://beepbeepplanet.com',
-      'test' => 'https://microblueplanet.com',
-      _ => 'http://192.168.0.101:31110',
-    };
+    return _trimTrailingSlash(switch (current) {
+      'prod' => 'https://beepbeepplanet.com/common',
+      'test' => 'https://microblueplanet.com/common',
+      _ => 'http://192.168.0.101:5464/common',
+    });
+  }
+
+  static String _trimTrailingSlash(String value) {
+    return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
   }
 }
 

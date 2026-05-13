@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/config/app_config.dart';
 import '../domain/app_user_session.dart';
@@ -35,9 +36,12 @@ class AppAccountAuthApi {
     bool forceLogin = false,
   }) async {
     final Response<Map<String, dynamic>> response;
+    final loginPath = '/base/auth/user/login';
+    final requestUri = _dio.options.baseUrl + loginPath;
     try {
+      debugPrint('[APP Login] POST $requestUri');
       response = await _dio.post<Map<String, dynamic>>(
-        '/base/auth/user/login',
+        loginPath,
         data: {
           'email': email.trim(),
           'password': _md5Upper32(password),
@@ -46,7 +50,12 @@ class AppAccountAuthApi {
         options: Options(headers: {'DeviceId': deviceId}),
       );
     } on DioException catch (error) {
-      throw AppAccountLoginException(message: _dioErrorMessage(error));
+      debugPrint(
+        '[APP Login] failed url=$requestUri type=${error.type} error=${error.error} message=${error.message}',
+      );
+      throw AppAccountLoginException(
+        message: _dioErrorMessage(error, requestUri),
+      );
     }
 
     final body = response.data ?? <String, dynamic>{};
@@ -79,16 +88,20 @@ class AppAccountAuthApi {
     return md5.convert(utf8.encode(input)).toString().toUpperCase();
   }
 
-  static String _dioErrorMessage(DioException error) {
+  static String _dioErrorMessage(DioException error, String requestUri) {
     final response = error.response;
     final data = response?.data;
     if (data is Map && data['message'] != null) {
       return data['message'].toString();
     }
     if (response != null) {
-      return 'HTTP ${response.statusCode}: ${response.statusMessage ?? 'Request failed'}';
+      return 'APP login request failed (${response.statusCode}): ${response.statusMessage ?? 'Request failed'}';
     }
-    return error.message ?? 'Network error';
+    final detail = error.message ?? error.error?.toString() ?? 'Network error';
+    if (error.type == DioExceptionType.connectionError) {
+      return 'Cannot connect to APP API: $requestUri. $detail';
+    }
+    return 'APP login request failed: $detail';
   }
 }
 

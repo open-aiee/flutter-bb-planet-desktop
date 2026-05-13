@@ -19,6 +19,8 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
   static const _idKey = 'appAccount.id';
   static const _emailKey = 'appAccount.email';
   static const _displayNameKey = 'appAccount.displayName';
+  static const _savedLoginEmailKey = 'appAccount.savedLogin.email';
+  static const _savedLoginPasswordKey = 'appAccount.savedLogin.password';
 
   @override
   AppAccountAuthState build() {
@@ -45,15 +47,16 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
             forceLogin: forceLogin,
           );
       await _persistSession(session);
+      await _persistSavedLoginCredentials(email: email, password: password);
       state = state.copyWith(isLoading: false, session: session);
       return true;
     } on AppAccountLoginException catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: error.message);
       return false;
-    } catch (_) {
+    } catch (error) {
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'Network error, please try again.',
+        errorMessage: 'Login failed: $error',
       );
       return false;
     }
@@ -75,6 +78,37 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
     await store.write(_emailKey, session.email);
     await store.write(_displayNameKey, session.displayName);
   }
+
+  Future<void> _persistSavedLoginCredentials({
+    required String email,
+    required String password,
+  }) async {
+    final store = ref.read(secureStoreProvider);
+    await store.write(_savedLoginEmailKey, email.trim());
+    await store.write(_savedLoginPasswordKey, password);
+  }
+
+  Future<AppAccountSavedLoginCredentials> readSavedLoginCredentials() async {
+    final store = ref.read(secureStoreProvider);
+    final email = await store.read(_savedLoginEmailKey);
+    final password = await store.read(_savedLoginPasswordKey);
+    return AppAccountSavedLoginCredentials(
+      email: email ?? '',
+      password: password ?? '',
+    );
+  }
+}
+
+class AppAccountSavedLoginCredentials {
+  const AppAccountSavedLoginCredentials({
+    required this.email,
+    required this.password,
+  });
+
+  final String email;
+  final String password;
+
+  bool get isNotEmpty => email.trim().isNotEmpty || password.isNotEmpty;
 }
 
 class AppAccountAuthState {

@@ -113,4 +113,120 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get messageInputDisabledHint =>
       'Message input is available after selecting a chat target.';
+
+  @override
+  String get settings => 'Settings';
+
+  @override
+  String get language => 'Language';
+
+  @override
+  String get languageSystem => 'System';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageTraditionalChinese => 'Traditional Chinese';
+
+  @override
+  String get languageVietnamese => 'Vietnamese';
+
+  @override
+  String get close => 'Close';
+
+  @override
+  String get navChats => 'Chats';
+
+  @override
+  String get navNew => 'New';
+
+  @override
+  String get navOnline => 'Online';
+
+  @override
+  String get navRichs => 'Richs';
+
+  @override
+  String get navLogin => 'Login';
+
+  @override
+  String get navSettings => 'Settings';
+
+  @override
+  String get workspaceSearchHint => 'Search or start a new chat';
+
+  @override
+  String get workspaceLoadingUsers => 'Loading users...';
+
+  @override
+  String get workspaceUsersEmpty => 'No users found for this category.';
+
+  @override
+  String get workspaceUsersLoginRequired =>
+      'Sign in an APP account before loading real users.';
+
+  @override
+  String get workspaceUsersLoadFailed =>
+      'Unable to load users. Please try again later.';
+
+  @override
+  String get workspaceMessageInputHint => 'Type a message';
+
+  @override
+  String get messageReadMore => 'Read more';
+
+  @override
+  String get workspaceUserOnline => 'Online';
+
+  @override
+  String get mockClairePreview => 'Haha oh man';
+
+  @override
+  String get mockJoePreview => 'Haha that’s terrifying 😂';
+
+  @override
+  String get mockOptimusPreview => 'My name is Optimus prime 🤖';
+
+  @override
+  String get mockYvesPreview => 'Bro, that’s so sick ⚡';
+
+  @override
+  String get mockNewUserPreview => 'New user joined 2 minutes ago';
+
+  @override
+  String get mockNeedsGreetingPreview => 'Needs first greeting';
+
+  @override
+  String get mockViewedProfilePreview => 'Viewed profile card';
+
+  @override
+  String get mockActiveNowPreview => 'Active now';
+
+  @override
+  String get mockBrowsingChatPreview => 'Browsing chat page';
+
+  @override
+  String get mockReplyRatePreview => 'Reply rate is high';
+
+  @override
+  String get mockHighValuePreview => 'High value user';
+
+  @override
+  String get mockToppedUpPreview => 'Recently topped up';
+
+  @override
+  String get mockFastRepliesPreview => 'Prefers fast replies';
+
+  @override
+  String get mockWelcomeMessage => 'Welcome to BB Planet. Nice to meet you.';
+
+  @override
+  String get mockHelpStartMessage => 'Can someone help me start?';
+
+  @override
+  String get mockPremiumMessage => 'Show me premium profiles.';
+
+  @override
+  String get mockPremiumReply => 'I can help you find the best matches.';
 }

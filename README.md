@@ -23,6 +23,14 @@
 - Hive CE encrypted cache
 - Flutter gen-l10n
 
+## 本地消息缓存约定
+
+- 本地消息使用 Hive CE 加密缓存，路径固定在系统应用支持目录，避免应用卸载或重新构建时误删。
+- 本地 `1 对 1` 会话 key 固定为：`sender:{发消息APP用户ID}:direct-peer:{对方用户ID}`。
+- `sender` 表示这段会话归属的真实 APP 发言账号；`direct-peer` 表示该发言账号正在单聊的对方用户。
+- `roomId` 仅作为服务端发消息、同步历史消息接口的辅助字段，不参与本地缓存 key，不用于区分单聊、群聊或聊天室。
+- 后续支持多 APP 账号时，`sender:{发消息APP用户ID}` 天然隔离不同发言账号的本地消息。
+
 ## 目录结构
 
 ```text
@@ -61,8 +69,9 @@ flutter run -d macos
 ```bash
 flutter run -d macos \
   --dart-define=ADMIN_API_BASE_URL=https://microblueplanet.com/beep-admin \
-  --dart-define=APP_API_BASE_URL=https://microblueplanet.com/beep-user \
-  --dart-define=IM_SOCKET_URL=https://microblueplanet.com
+  --dart-define=ALLOW_AUTH_BYPASS=true \
+  --dart-define=APP_API_BASE_URL=https://microblueplanet.com/beep-user/ \
+  --dart-define=IM_SOCKET_URL=https://microblueplanet.com/common
 ```
 
 也可以使用 `APP_ENV` 切换默认环境：
@@ -72,7 +81,7 @@ flutter run -d macos \
 flutter run -d macos --dart-define=APP_ENV=local
 
 # 测试环境
-flutter run -d macos --dart-define=APP_ENV=test
+flutter run -d macos --dart-define=APP_ENV=test --dart-define=ALLOW_AUTH_BYPASS=true
 
 # 生产环境
 flutter run -d macos --dart-define=APP_ENV=prod
@@ -82,9 +91,9 @@ flutter run -d macos --dart-define=APP_ENV=prod
 
 | APP_ENV | ADMIN_API_BASE_URL | APP_API_BASE_URL | IM_SOCKET_URL |
 | --- | --- | --- | --- |
-| local | `http://192.168.0.101:31111` | `http://192.168.0.101:31110` | `http://192.168.0.101:31110` |
-| test | `https://microblueplanet.com/beep-admin` | `https://microblueplanet.com/beep-user` | `https://microblueplanet.com` |
-| prod | `https://beepbeepplanet.com/beep-admin` | `https://beepbeepplanet.com/beep-user` | `https://beepbeepplanet.com` |
+| local | `http://192.168.0.101:31111` | `http://192.168.0.101:31110` | `http://192.168.0.101:5464/common` |
+| test | `https://microblueplanet.com/beep-admin` | `https://microblueplanet.com/beep-user` | `https://microblueplanet.com/common` |
+| prod | `https://beepbeepplanet.com/beep-admin` | `https://beepbeepplanet.com/beep-user` | `https://beepbeepplanet.com/common` |
 
 本地环境默认允许跳过后台登录进入工作台，便于先开发主页和 user 端能力。其他环境默认不允许。也可以显式覆盖：
 
@@ -97,8 +106,8 @@ flutter run -d macos --dart-define=ALLOW_AUTH_BYPASS=true
 ```bash
 flutter run -d macos \
   --dart-define=ADMIN_API_BASE_URL=http://192.168.0.101:31111 \
-  --dart-define=APP_API_BASE_URL=https://microblueplanet.com/beep-user \
-  --dart-define=IM_SOCKET_URL=https://microblueplanet.com
+  --dart-define=APP_API_BASE_URL=https://microblueplanet.com/beep-user/ \
+  --dart-define=IM_SOCKET_URL=https://microblueplanet.com/common
 ```
 
 ## 关联文档

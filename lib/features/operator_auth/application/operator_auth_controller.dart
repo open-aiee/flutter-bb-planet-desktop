@@ -42,10 +42,10 @@ class OperatorAuthController extends Notifier<OperatorAuthState> {
     } on OperatorLoginException catch (error) {
       state = state.copyWith(isLoading: false, errorMessage: error.message);
       return false;
-    } catch (_) {
+    } catch (error) {
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'Network error, please try again.',
+        errorMessage: 'Login failed: $error',
       );
       return false;
     }

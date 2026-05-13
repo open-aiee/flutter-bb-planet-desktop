@@ -106,6 +106,120 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get messageInputDisabledHint => '選擇聊天對象後才可以輸入訊息。';
+
+  @override
+  String get settings => '設定';
+
+  @override
+  String get language => '語言';
+
+  @override
+  String get languageSystem => '跟隨系統';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageTraditionalChinese => '繁體中文';
+
+  @override
+  String get languageVietnamese => 'Tiếng Việt';
+
+  @override
+  String get close => '關閉';
+
+  @override
+  String get navChats => '聊天';
+
+  @override
+  String get navNew => '新增';
+
+  @override
+  String get navOnline => '在線';
+
+  @override
+  String get navRichs => '高價值';
+
+  @override
+  String get navLogin => '登入';
+
+  @override
+  String get navSettings => '設定';
+
+  @override
+  String get workspaceSearchHint => '搜尋或開始新聊天';
+
+  @override
+  String get workspaceLoadingUsers => '正在載入用戶...';
+
+  @override
+  String get workspaceUsersEmpty => '目前沒有符合條件的用戶。';
+
+  @override
+  String get workspaceUsersLoginRequired => '請先登入 APP 帳號，再載入真實用戶。';
+
+  @override
+  String get workspaceUsersLoadFailed => '用戶載入失敗，請稍後再試。';
+
+  @override
+  String get workspaceMessageInputHint => '輸入訊息';
+
+  @override
+  String get messageReadMore => '閱讀更多';
+
+  @override
+  String get workspaceUserOnline => '在線';
+
+  @override
+  String get mockClairePreview => '哈哈，天啊';
+
+  @override
+  String get mockJoePreview => '哈哈，這有點嚇人 😂';
+
+  @override
+  String get mockOptimusPreview => '我是 Optimus prime 🤖';
+
+  @override
+  String get mockYvesPreview => '兄弟，這太酷了 ⚡';
+
+  @override
+  String get mockNewUserPreview => '新用戶 2 分鐘前加入';
+
+  @override
+  String get mockNeedsGreetingPreview => '需要首次問候';
+
+  @override
+  String get mockViewedProfilePreview => '已查看個人資料卡';
+
+  @override
+  String get mockActiveNowPreview => '目前活躍';
+
+  @override
+  String get mockBrowsingChatPreview => '正在瀏覽聊天頁';
+
+  @override
+  String get mockReplyRatePreview => '回覆率高';
+
+  @override
+  String get mockHighValuePreview => '高價值用戶';
+
+  @override
+  String get mockToppedUpPreview => '最近已充值';
+
+  @override
+  String get mockFastRepliesPreview => '偏好快速回覆';
+
+  @override
+  String get mockWelcomeMessage => '歡迎來到 BB Planet，很高興認識你。';
+
+  @override
+  String get mockHelpStartMessage => '有人可以幫我開始嗎？';
+
+  @override
+  String get mockPremiumMessage => '給我看看高級資料。';
+
+  @override
+  String get mockPremiumReply => '我可以幫你找到最合適的匹配。';
 }
 
 /// The translations for Chinese, using the Han script (`zh_Hant`).
@@ -210,4 +324,118 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get messageInputDisabledHint => '選擇聊天對象後才可以輸入訊息。';
+
+  @override
+  String get settings => '設定';
+
+  @override
+  String get language => '語言';
+
+  @override
+  String get languageSystem => '跟隨系統';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageTraditionalChinese => '繁體中文';
+
+  @override
+  String get languageVietnamese => 'Tiếng Việt';
+
+  @override
+  String get close => '關閉';
+
+  @override
+  String get navChats => '聊天';
+
+  @override
+  String get navNew => '新增';
+
+  @override
+  String get navOnline => '在線';
+
+  @override
+  String get navRichs => '高價值';
+
+  @override
+  String get navLogin => '登入';
+
+  @override
+  String get navSettings => '設定';
+
+  @override
+  String get workspaceSearchHint => '搜尋或開始新聊天';
+
+  @override
+  String get workspaceLoadingUsers => '正在載入用戶...';
+
+  @override
+  String get workspaceUsersEmpty => '目前沒有符合條件的用戶。';
+
+  @override
+  String get workspaceUsersLoginRequired => '請先登入 APP 帳號，再載入真實用戶。';
+
+  @override
+  String get workspaceUsersLoadFailed => '用戶載入失敗，請稍後再試。';
+
+  @override
+  String get workspaceMessageInputHint => '輸入訊息';
+
+  @override
+  String get messageReadMore => '閱讀更多';
+
+  @override
+  String get workspaceUserOnline => '在線';
+
+  @override
+  String get mockClairePreview => '哈哈，天啊';
+
+  @override
+  String get mockJoePreview => '哈哈，這有點嚇人 😂';
+
+  @override
+  String get mockOptimusPreview => '我是 Optimus prime 🤖';
+
+  @override
+  String get mockYvesPreview => '兄弟，這太酷了 ⚡';
+
+  @override
+  String get mockNewUserPreview => '新用戶 2 分鐘前加入';
+
+  @override
+  String get mockNeedsGreetingPreview => '需要首次問候';
+
+  @override
+  String get mockViewedProfilePreview => '已查看個人資料卡';
+
+  @override
+  String get mockActiveNowPreview => '目前活躍';
+
+  @override
+  String get mockBrowsingChatPreview => '正在瀏覽聊天頁';
+
+  @override
+  String get mockReplyRatePreview => '回覆率高';
+
+  @override
+  String get mockHighValuePreview => '高價值用戶';
+
+  @override
+  String get mockToppedUpPreview => '最近已充值';
+
+  @override
+  String get mockFastRepliesPreview => '偏好快速回覆';
+
+  @override
+  String get mockWelcomeMessage => '歡迎來到 BB Planet，很高興認識你。';
+
+  @override
+  String get mockHelpStartMessage => '有人可以幫我開始嗎？';
+
+  @override
+  String get mockPremiumMessage => '給我看看高級資料。';
+
+  @override
+  String get mockPremiumReply => '我可以幫你找到最合適的匹配。';
 }

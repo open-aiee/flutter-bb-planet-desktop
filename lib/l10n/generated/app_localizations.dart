@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'app_localizations_en.dart';
+import 'app_localizations_vi.dart';
 import 'app_localizations_zh.dart';
 
 // ignore_for_file: type=lint
@@ -95,6 +96,7 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
+    Locale('vi'),
     Locale('zh'),
     Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
   ];
@@ -296,6 +298,234 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Message input is available after selecting a chat target.'**
   String get messageInputDisabledHint;
+
+  /// No description provided for @settings.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get settings;
+
+  /// No description provided for @language.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get language;
+
+  /// No description provided for @languageSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System'**
+  String get languageSystem;
+
+  /// No description provided for @languageEnglish.
+  ///
+  /// In en, this message translates to:
+  /// **'English'**
+  String get languageEnglish;
+
+  /// No description provided for @languageTraditionalChinese.
+  ///
+  /// In en, this message translates to:
+  /// **'Traditional Chinese'**
+  String get languageTraditionalChinese;
+
+  /// No description provided for @languageVietnamese.
+  ///
+  /// In en, this message translates to:
+  /// **'Vietnamese'**
+  String get languageVietnamese;
+
+  /// No description provided for @close.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get close;
+
+  /// No description provided for @navChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Chats'**
+  String get navChats;
+
+  /// No description provided for @navNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get navNew;
+
+  /// No description provided for @navOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get navOnline;
+
+  /// No description provided for @navRichs.
+  ///
+  /// In en, this message translates to:
+  /// **'Richs'**
+  String get navRichs;
+
+  /// No description provided for @navLogin.
+  ///
+  /// In en, this message translates to:
+  /// **'Login'**
+  String get navLogin;
+
+  /// No description provided for @navSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get navSettings;
+
+  /// No description provided for @workspaceSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search or start a new chat'**
+  String get workspaceSearchHint;
+
+  /// No description provided for @workspaceLoadingUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading users...'**
+  String get workspaceLoadingUsers;
+
+  /// No description provided for @workspaceUsersEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No users found for this category.'**
+  String get workspaceUsersEmpty;
+
+  /// No description provided for @workspaceUsersLoginRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in an APP account before loading real users.'**
+  String get workspaceUsersLoginRequired;
+
+  /// No description provided for @workspaceUsersLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to load users. Please try again later.'**
+  String get workspaceUsersLoadFailed;
+
+  /// No description provided for @workspaceMessageInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Type a message'**
+  String get workspaceMessageInputHint;
+
+  /// No description provided for @messageReadMore.
+  ///
+  /// In en, this message translates to:
+  /// **'Read more'**
+  String get messageReadMore;
+
+  /// No description provided for @workspaceUserOnline.
+  ///
+  /// In en, this message translates to:
+  /// **'Online'**
+  String get workspaceUserOnline;
+
+  /// No description provided for @mockClairePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Haha oh man'**
+  String get mockClairePreview;
+
+  /// No description provided for @mockJoePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Haha that’s terrifying 😂'**
+  String get mockJoePreview;
+
+  /// No description provided for @mockOptimusPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'My name is Optimus prime 🤖'**
+  String get mockOptimusPreview;
+
+  /// No description provided for @mockYvesPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Bro, that’s so sick ⚡'**
+  String get mockYvesPreview;
+
+  /// No description provided for @mockNewUserPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'New user joined 2 minutes ago'**
+  String get mockNewUserPreview;
+
+  /// No description provided for @mockNeedsGreetingPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs first greeting'**
+  String get mockNeedsGreetingPreview;
+
+  /// No description provided for @mockViewedProfilePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewed profile card'**
+  String get mockViewedProfilePreview;
+
+  /// No description provided for @mockActiveNowPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Active now'**
+  String get mockActiveNowPreview;
+
+  /// No description provided for @mockBrowsingChatPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Browsing chat page'**
+  String get mockBrowsingChatPreview;
+
+  /// No description provided for @mockReplyRatePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Reply rate is high'**
+  String get mockReplyRatePreview;
+
+  /// No description provided for @mockHighValuePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'High value user'**
+  String get mockHighValuePreview;
+
+  /// No description provided for @mockToppedUpPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently topped up'**
+  String get mockToppedUpPreview;
+
+  /// No description provided for @mockFastRepliesPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefers fast replies'**
+  String get mockFastRepliesPreview;
+
+  /// No description provided for @mockWelcomeMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome to BB Planet. Nice to meet you.'**
+  String get mockWelcomeMessage;
+
+  /// No description provided for @mockHelpStartMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Can someone help me start?'**
+  String get mockHelpStartMessage;
+
+  /// No description provided for @mockPremiumMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Show me premium profiles.'**
+  String get mockPremiumMessage;
+
+  /// No description provided for @mockPremiumReply.
+  ///
+  /// In en, this message translates to:
+  /// **'I can help you find the best matches.'**
+  String get mockPremiumReply;
 }
 
 class _AppLocalizationsDelegate
@@ -309,7 +539,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en', 'zh'].contains(locale.languageCode);
+      <String>['en', 'vi', 'zh'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -332,6 +562,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
   switch (locale.languageCode) {
     case 'en':
       return AppLocalizationsEn();
+    case 'vi':
+      return AppLocalizationsVi();
     case 'zh':
       return AppLocalizationsZh();
   }

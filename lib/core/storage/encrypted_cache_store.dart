@@ -1,8 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:hive_ce/hive.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
+import 'desktop_data_directory.dart';
 
 class EncryptedCacheStore {
   EncryptedCacheStore({required this.encryptionKey});
@@ -10,8 +12,10 @@ class EncryptedCacheStore {
   final List<int> encryptionKey;
 
   Future<Box<String>> openBox(String name) async {
-    final directory = await getApplicationSupportDirectory();
-    Hive.init(p.join(directory.path, 'cache'));
+    final directory = await DesktopDataDirectory.resolve();
+    final cacheDirectory = Directory(p.join(directory.path, 'cache'));
+    await cacheDirectory.create(recursive: true);
+    Hive.init(cacheDirectory.path);
 
     return Hive.openBox<String>(
       name,
