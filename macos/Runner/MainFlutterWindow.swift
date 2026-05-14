@@ -3,13 +3,14 @@ import FlutterMacOS
 
 class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
-    let defaultContentSize = NSSize(width: 1120, height: 708)
+    let defaultContentSize = NSSize(width: 960, height: 720)
+    let minimumContentSize = NSSize(width: 800, height: 600)
 
     titleVisibility = .hidden
     titlebarAppearsTransparent = true
     styleMask.insert(.fullSizeContentView)
-    minSize = defaultContentSize
-    contentMinSize = defaultContentSize
+    minSize = minimumContentSize
+    contentMinSize = minimumContentSize
 
     let flutterViewController = FlutterViewController()
     self.contentViewController = flutterViewController

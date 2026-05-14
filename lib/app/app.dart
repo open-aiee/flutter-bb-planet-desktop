@@ -18,7 +18,7 @@ class ChatOpsDesktopApp extends ConsumerWidget {
     return MaterialApp.router(
       title: 'BB Planet Chat Ops',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark(),
+      theme: AppTheme.light(),
       locale: locale,
       routerConfig: router,
       localizationsDelegates: const [

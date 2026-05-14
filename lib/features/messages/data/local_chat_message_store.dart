@@ -95,6 +95,50 @@ class LocalChatMessageStore {
     return latestByPeer;
   }
 
+  Future<List<LocalChatMessage>> markOutgoingReadByRoom({
+    required int appUserId,
+    required int roomId,
+    required int readMsgIndex,
+  }) async {
+    if (roomId <= 0 || readMsgIndex <= 0) {
+      return const [];
+    }
+    final updatedMessages = <LocalChatMessage>[];
+    for (final key in _box.keys.toList(growable: false)) {
+      final raw = _box.get(key);
+      if (raw == null) {
+        continue;
+      }
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) {
+        continue;
+      }
+      final message = LocalChatMessage.fromJson(
+        Map<String, dynamic>.from(decoded),
+      );
+      final serverId = int.tryParse(message.serverMessageId ?? '') ?? 0;
+      if (message.appUserId != appUserId ||
+          message.roomId != roomId ||
+          message.direction != ChatMessageDirection.outgoing ||
+          message.sendStatus == ChatMessageSendStatus.read ||
+          message.sendStatus == ChatMessageSendStatus.failed ||
+          serverId <= 0 ||
+          serverId > readMsgIndex) {
+        continue;
+      }
+      final updated = message.copyWith(
+        sendStatus: ChatMessageSendStatus.read,
+        updatedAt: DateTime.now(),
+      );
+      await _box.put(key, jsonEncode(updated.toJson()));
+      updatedMessages.add(updated);
+    }
+    if (updatedMessages.isNotEmpty) {
+      await _box.flush();
+    }
+    return updatedMessages;
+  }
+
   String _storageKey(LocalChatMessage message) {
     return '${message.conversationKey}:${message.localId}';
   }
@@ -132,6 +176,10 @@ LocalChatMessage _preferServerMessage(
   if (current.sendStatus == ChatMessageSendStatus.pending &&
       next.sendStatus != ChatMessageSendStatus.pending) {
     return next;
+  }
+  if (current.sendStatus == ChatMessageSendStatus.read &&
+      next.sendStatus == ChatMessageSendStatus.sent) {
+    return current;
   }
   return next.updatedAt.isAfter(current.updatedAt) ? next : current;
 }

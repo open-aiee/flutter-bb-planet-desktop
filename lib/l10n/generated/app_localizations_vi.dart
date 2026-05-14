@@ -197,6 +197,43 @@ class AppLocalizationsVi extends AppLocalizations {
   String get messageReadMore => 'Xem thêm';
 
   @override
+  String get emojiRecentTitle => 'Đã dùng gần đây';
+
+  @override
+  String get emojiSmileysTitle => 'Biểu tượng & Con người';
+
+  @override
+  String get mediaUnsupportedFile => 'Vui lòng chọn một ảnh hoặc một video.';
+
+  @override
+  String mediaVideoSizeLimit(String sizeMb) {
+    return 'Dung lượng video không được vượt quá $sizeMb MB.';
+  }
+
+  @override
+  String mediaSelected(String fileName) {
+    return 'Đã chọn: $fileName';
+  }
+
+  @override
+  String get mediaPreviewTitle => '1 phương tiện';
+
+  @override
+  String get mediaCaptionHint => 'Thêm chú thích...';
+
+  @override
+  String get mediaVideoLabel => 'Video';
+
+  @override
+  String get mediaSend => 'Gửi';
+
+  @override
+  String get mediaSending => 'Đang gửi...';
+
+  @override
+  String get mediaSendPending => 'Chưa kết nối chức năng gửi phương tiện.';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override

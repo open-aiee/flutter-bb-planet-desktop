@@ -24,6 +24,9 @@ class ImSessionManager {
 
   Stream<Map<String, dynamic>> get messageStream => _socketClient.messageStream;
 
+  Stream<ImClientIndexEvent> get clientIndexStream =>
+      _socketClient.clientIndexStream;
+
   bool get isConnected => _socketClient.isConnected;
 
   void start({required String certificate}) {
@@ -46,10 +49,48 @@ class ImSessionManager {
     );
   }
 
+  Future<ImSendAck> sendEmojiGameMessage({
+    required int roomId,
+    required String type,
+    required int value,
+    required String clientMessageId,
+  }) {
+    return _socketClient.sendEmojiGameMessage(
+      roomId: roomId,
+      type: type,
+      value: value,
+      clientMessageId: clientMessageId,
+    );
+  }
+
+  Future<ImSendAck> sendMediaMessage({
+    required int roomId,
+    required List<Map<String, dynamic>> msgData,
+    required String clientMessageId,
+  }) {
+    return _socketClient.sendMediaMessage(
+      roomId: roomId,
+      msgData: msgData,
+      clientMessageId: clientMessageId,
+    );
+  }
+
   Future<ImSyncRecordAck> syncRecords({int startMsgIndex = 0, int? roomId}) {
     return _socketClient.syncRecords(
       startMsgIndex: startMsgIndex,
       roomId: roomId,
+    );
+  }
+
+  Future<bool> syncClientIndex({
+    required int roomId,
+    int? curMsgIndex,
+    int? readMsgIndex,
+  }) {
+    return _socketClient.syncClientIndex(
+      roomId: roomId,
+      curMsgIndex: curMsgIndex,
+      readMsgIndex: readMsgIndex,
     );
   }
 

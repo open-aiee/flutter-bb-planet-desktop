@@ -58,6 +58,31 @@
   "workspaceUsersLoadFailed": "Không thể tải người dùng. Vui lòng thử lại sau.",
   "workspaceMessageInputHint": "Nhập tin nhắn",
   "messageReadMore": "Xem thêm",
+  "emojiRecentTitle": "Đã dùng gần đây",
+  "emojiSmileysTitle": "Biểu tượng & Con người",
+  "mediaUnsupportedFile": "Vui lòng chọn một ảnh hoặc một video.",
+  "mediaVideoSizeLimit": "Dung lượng video không được vượt quá {sizeMb} MB.",
+  "@mediaVideoSizeLimit": {
+    "placeholders": {
+      "sizeMb": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaSelected": "Đã chọn: {fileName}",
+  "@mediaSelected": {
+    "placeholders": {
+      "fileName": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaPreviewTitle": "1 phương tiện",
+  "mediaCaptionHint": "Thêm chú thích...",
+  "mediaVideoLabel": "Video",
+  "mediaSend": "Gửi",
+  "mediaSending": "Đang gửi...",
+  "mediaSendPending": "Chưa kết nối chức năng gửi phương tiện.",
   "workspaceUserOnline": "Online",
   "mockClairePreview": "Haha trời ơi",
   "mockJoePreview": "Haha đáng sợ thật 😂",

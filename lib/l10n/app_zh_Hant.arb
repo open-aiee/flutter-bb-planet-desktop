@@ -58,6 +58,31 @@
   "workspaceUsersLoadFailed": "用戶載入失敗，請稍後再試。",
   "workspaceMessageInputHint": "輸入訊息",
   "messageReadMore": "閱讀更多",
+  "emojiRecentTitle": "最近使用",
+  "emojiSmileysTitle": "表情符號與人物",
+  "mediaUnsupportedFile": "請選擇一張圖片或一個影片。",
+  "mediaVideoSizeLimit": "影片大小不能超過 {sizeMb} MB。",
+  "@mediaVideoSizeLimit": {
+    "placeholders": {
+      "sizeMb": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaSelected": "已選擇：{fileName}",
+  "@mediaSelected": {
+    "placeholders": {
+      "fileName": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaPreviewTitle": "1 個媒體",
+  "mediaCaptionHint": "添加說明...",
+  "mediaVideoLabel": "影片",
+  "mediaSend": "發送",
+  "mediaSending": "發送中...",
+  "mediaSendPending": "媒體發送暫未接入。",
   "workspaceUserOnline": "在線",
   "mockClairePreview": "哈哈，天啊",
   "mockJoePreview": "哈哈，這有點嚇人 😂",

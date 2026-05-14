@@ -455,6 +455,72 @@ abstract class AppLocalizations {
   /// **'Read more'**
   String get messageReadMore;
 
+  /// No description provided for @emojiRecentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently used'**
+  String get emojiRecentTitle;
+
+  /// No description provided for @emojiSmileysTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Smileys & People'**
+  String get emojiSmileysTitle;
+
+  /// No description provided for @mediaUnsupportedFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Please select one photo or video.'**
+  String get mediaUnsupportedFile;
+
+  /// No description provided for @mediaVideoSizeLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Video size cannot exceed {sizeMb} MB.'**
+  String mediaVideoSizeLimit(String sizeMb);
+
+  /// No description provided for @mediaSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected: {fileName}'**
+  String mediaSelected(String fileName);
+
+  /// No description provided for @mediaPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'1 Media'**
+  String get mediaPreviewTitle;
+
+  /// No description provided for @mediaCaptionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a caption...'**
+  String get mediaCaptionHint;
+
+  /// No description provided for @mediaVideoLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get mediaVideoLabel;
+
+  /// No description provided for @mediaSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get mediaSend;
+
+  /// No description provided for @mediaSending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending...'**
+  String get mediaSending;
+
+  /// No description provided for @mediaSendPending.
+  ///
+  /// In en, this message translates to:
+  /// **'Media sending is not connected yet.'**
+  String get mediaSendPending;
+
   /// No description provided for @workspaceUserOnline.
   ///
   /// In en, this message translates to:

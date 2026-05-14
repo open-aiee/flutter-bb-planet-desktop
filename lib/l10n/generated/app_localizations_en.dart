@@ -197,6 +197,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String get messageReadMore => 'Read more';
 
   @override
+  String get emojiRecentTitle => 'Recently used';
+
+  @override
+  String get emojiSmileysTitle => 'Smileys & People';
+
+  @override
+  String get mediaUnsupportedFile => 'Please select one photo or video.';
+
+  @override
+  String mediaVideoSizeLimit(String sizeMb) {
+    return 'Video size cannot exceed $sizeMb MB.';
+  }
+
+  @override
+  String mediaSelected(String fileName) {
+    return 'Selected: $fileName';
+  }
+
+  @override
+  String get mediaPreviewTitle => '1 Media';
+
+  @override
+  String get mediaCaptionHint => 'Add a caption...';
+
+  @override
+  String get mediaVideoLabel => 'Video';
+
+  @override
+  String get mediaSend => 'Send';
+
+  @override
+  String get mediaSending => 'Sending...';
+
+  @override
+  String get mediaSendPending => 'Media sending is not connected yet.';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override

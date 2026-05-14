@@ -58,6 +58,31 @@
   "workspaceUsersLoadFailed": "Unable to load users. Please try again later.",
   "workspaceMessageInputHint": "Type a message",
   "messageReadMore": "Read more",
+  "emojiRecentTitle": "Recently used",
+  "emojiSmileysTitle": "Smileys & People",
+  "mediaUnsupportedFile": "Please select one photo or video.",
+  "mediaVideoSizeLimit": "Video size cannot exceed {sizeMb} MB.",
+  "@mediaVideoSizeLimit": {
+    "placeholders": {
+      "sizeMb": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaSelected": "Selected: {fileName}",
+  "@mediaSelected": {
+    "placeholders": {
+      "fileName": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaPreviewTitle": "1 Media",
+  "mediaCaptionHint": "Add a caption...",
+  "mediaVideoLabel": "Video",
+  "mediaSend": "Send",
+  "mediaSending": "Sending...",
+  "mediaSendPending": "Media sending is not connected yet.",
   "workspaceUserOnline": "Online",
   "mockClairePreview": "Haha oh man",
   "mockJoePreview": "Haha that’s terrifying 😂",

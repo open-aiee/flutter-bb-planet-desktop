@@ -64,8 +64,18 @@ class RecommendedUser {
         user['avatar'],
       ]),
       onlineStatus: _firstNonZeroInt([
+        _onlineDataValue(json['onlineData']),
+        _onlineDataValue(user['onlineData']),
         json['onlineStatus'],
+        json['online'],
+        json['isOnline'],
+        json['userOnlineStatus'],
+        json['status'],
         user['onlineStatus'],
+        user['online'],
+        user['isOnline'],
+        user['userOnlineStatus'],
+        user['status'],
       ]),
       fans: _firstNonZeroInt([json['fans'], user['fans']]),
       followStatus: _firstNonZeroInt([
@@ -90,6 +100,14 @@ class RecommendedUser {
     return const <String, dynamic>{};
   }
 
+  static Object? _onlineDataValue(Object? value) {
+    final data = _asMap(value);
+    if (data.isEmpty) {
+      return null;
+    }
+    return data['online'];
+  }
+
   static int _firstNonZeroInt(List<Object?> values) {
     for (final value in values) {
       final parsed = _asInt(value);
@@ -111,6 +129,9 @@ class RecommendedUser {
   }
 
   static int _asInt(Object? value) {
+    if (value is bool) {
+      return value ? 1 : 0;
+    }
     if (value is int) {
       return value;
     }

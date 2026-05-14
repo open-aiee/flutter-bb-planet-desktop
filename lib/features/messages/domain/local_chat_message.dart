@@ -1,6 +1,6 @@
 enum ChatMessageDirection { incoming, outgoing }
 
-enum ChatMessageSendStatus { pending, sent, failed }
+enum ChatMessageSendStatus { pending, sent, read, failed }
 
 class LocalChatMessage {
   const LocalChatMessage({
@@ -17,6 +17,9 @@ class LocalChatMessage {
     this.clientMessageId,
     this.serverMessageId,
     this.errorMessage,
+    this.sendType = 1,
+    this.msgData,
+    this.localMediaPath,
   });
 
   final String localId;
@@ -32,6 +35,9 @@ class LocalChatMessage {
   final String? clientMessageId;
   final String? serverMessageId;
   final String? errorMessage;
+  final int sendType;
+  final String? msgData;
+  final String? localMediaPath;
 
   LocalChatMessage copyWith({
     int? roomId,
@@ -40,6 +46,9 @@ class LocalChatMessage {
     String? clientMessageId,
     String? serverMessageId,
     String? errorMessage,
+    int? sendType,
+    String? msgData,
+    String? localMediaPath,
     DateTime? updatedAt,
   }) {
     return LocalChatMessage(
@@ -56,6 +65,9 @@ class LocalChatMessage {
       clientMessageId: clientMessageId ?? this.clientMessageId,
       serverMessageId: serverMessageId ?? this.serverMessageId,
       errorMessage: errorMessage,
+      sendType: sendType ?? this.sendType,
+      msgData: msgData ?? this.msgData,
+      localMediaPath: localMediaPath ?? this.localMediaPath,
     );
   }
 
@@ -74,6 +86,9 @@ class LocalChatMessage {
       'clientMessageId': clientMessageId,
       'serverMessageId': serverMessageId,
       'errorMessage': errorMessage,
+      'sendType': sendType,
+      'msgData': msgData,
+      'localMediaPath': localMediaPath,
     };
   }
 
@@ -100,6 +115,9 @@ class LocalChatMessage {
       clientMessageId: json['clientMessageId']?.toString(),
       serverMessageId: json['serverMessageId']?.toString(),
       errorMessage: json['errorMessage']?.toString(),
+      sendType: _asIntWithFallback(json['sendType'], 1),
+      msgData: json['msgData']?.toString(),
+      localMediaPath: json['localMediaPath']?.toString(),
     );
   }
 
@@ -108,6 +126,13 @@ class LocalChatMessage {
       return value;
     }
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static int _asIntWithFallback(Object? value, int fallback) {
+    if (value is int) {
+      return value;
+    }
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
   }
 
   static int? _asNullableInt(Object? value) {

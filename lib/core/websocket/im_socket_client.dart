@@ -12,12 +12,16 @@ class ImSocketClient {
 
   static const _sendChatEvent = 'sendChat';
   static const _syncRecordEvent = 'syncRecord';
+  static const _syncClientIndexEvent = 'syncClientIndex';
   static const _joinCommonRoomEvent = 'joinCommonRoom';
   static const _chatPushEvent = 'CHAT';
+  static const _clientIndexPushEvent = 'CLIENT_INDEX';
 
   final String socketUrl;
   final _statusController = StreamController<ConnectionStatus>.broadcast();
   final _messageController = StreamController<Map<String, dynamic>>.broadcast();
+  final _clientIndexController =
+      StreamController<ImClientIndexEvent>.broadcast();
 
   io.Socket? _socket;
   bool _connected = false;
@@ -27,6 +31,9 @@ class ImSocketClient {
   Stream<ConnectionStatus> get statusStream => _statusController.stream;
 
   Stream<Map<String, dynamic>> get messageStream => _messageController.stream;
+
+  Stream<ImClientIndexEvent> get clientIndexStream =>
+      _clientIndexController.stream;
 
   bool get isConnected => _connected;
 
@@ -104,6 +111,15 @@ class ImSocketClient {
           _messageController.add(mapped);
         }
       })
+      ..on(_clientIndexPushEvent, (payload) {
+        debugPrint('[CHAT_OPS][SOCKET][CLIENT_INDEX_RAW] $payload');
+        final data = _extractEventData(payload);
+        final event = ImClientIndexEvent.fromPayload(data);
+        if (event != null) {
+          debugPrint('[CHAT_OPS][SOCKET][CLIENT_INDEX_DATA] $event');
+          _clientIndexController.add(event);
+        }
+      })
       ..connect();
   }
 
@@ -165,6 +181,80 @@ class ImSocketClient {
     );
   }
 
+  Future<ImSendAck> sendEmojiGameMessage({
+    required int roomId,
+    required String type,
+    required int value,
+    required String clientMessageId,
+  }) async {
+    if (!_connected && _socket != null) {
+      await _waitUntilConnected();
+    }
+    if (!_connected || _socket == null) {
+      return const ImSendAck(success: false, message: 'Socket disconnected');
+    }
+    final msgData = <String, dynamic>{'type': type, 'value': value};
+    final payload = <String, dynamic>{
+      'roomId': roomId,
+      'msg': '',
+      'sendType': 47,
+      'msgId': 100,
+      'cid': clientMessageId,
+      'msgData': msgData,
+    };
+    final completer = Completer<ImSendAck>();
+    _socket!.emitWithAck(
+      _sendChatEvent,
+      [payload],
+      ack: (payload) {
+        debugPrint('[CHAT_OPS][SOCKET][SEND_EMOJI_GAME_ACK] $payload');
+        if (!completer.isCompleted) {
+          completer.complete(ImSendAck.fromPayload(payload));
+        }
+      },
+    );
+    return completer.future.timeout(
+      const Duration(seconds: 8),
+      onTimeout: () => const ImSendAck(success: false, message: 'Send timeout'),
+    );
+  }
+
+  Future<ImSendAck> sendMediaMessage({
+    required int roomId,
+    required List<Map<String, dynamic>> msgData,
+    required String clientMessageId,
+  }) async {
+    if (!_connected && _socket != null) {
+      await _waitUntilConnected();
+    }
+    if (!_connected || _socket == null) {
+      return const ImSendAck(success: false, message: 'Socket disconnected');
+    }
+    final payload = <String, dynamic>{
+      'roomId': roomId,
+      'msg': '',
+      'sendType': 2,
+      'msgId': 100,
+      'cid': clientMessageId,
+      'msgData': msgData,
+    };
+    final completer = Completer<ImSendAck>();
+    _socket!.emitWithAck(
+      _sendChatEvent,
+      [payload],
+      ack: (payload) {
+        debugPrint('[CHAT_OPS][SOCKET][SEND_MEDIA_ACK] $payload');
+        if (!completer.isCompleted) {
+          completer.complete(ImSendAck.fromPayload(payload));
+        }
+      },
+    );
+    return completer.future.timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => const ImSendAck(success: false, message: 'Send timeout'),
+    );
+  }
+
   Future<ImSyncRecordAck> syncRecords({
     int startMsgIndex = 0,
     int? roomId,
@@ -193,6 +283,47 @@ class ImSocketClient {
     return completer.future.timeout(
       const Duration(seconds: 8),
       onTimeout: () => const ImSyncRecordAck(success: false),
+    );
+  }
+
+  Future<bool> syncClientIndex({
+    required int roomId,
+    int? curMsgIndex,
+    int? readMsgIndex,
+  }) async {
+    if (!_connected && _socket != null) {
+      await _waitUntilConnected();
+    }
+    if (!_connected || _socket == null || roomId <= 0) {
+      return false;
+    }
+    final payload = <String, dynamic>{
+      'roomId': roomId,
+      if (curMsgIndex != null && curMsgIndex > 0) 'curMsgIndex': curMsgIndex,
+      if (readMsgIndex != null && readMsgIndex > 0)
+        'readMsgIndex': readMsgIndex,
+    };
+    final completer = Completer<bool>();
+    _socket!.emitWithAck(
+      _syncClientIndexEvent,
+      [payload],
+      ack: (payload) {
+        debugPrint('[CHAT_OPS][SOCKET][SYNC_CLIENT_INDEX_ACK] $payload');
+        if (!completer.isCompleted) {
+          final source = ImSendAck._unwrap(payload);
+          completer.complete(
+            source is Map
+                ? ImSendAck._successFrom(
+                    source.map((key, value) => MapEntry(key.toString(), value)),
+                  )
+                : false,
+          );
+        }
+      },
+    );
+    return completer.future.timeout(
+      const Duration(seconds: 6),
+      onTimeout: () => false,
     );
   }
 
@@ -293,6 +424,47 @@ class ImSocketClient {
     disconnect();
     await _statusController.close();
     await _messageController.close();
+    await _clientIndexController.close();
+  }
+}
+
+class ImClientIndexEvent {
+  const ImClientIndexEvent({
+    required this.roomId,
+    required this.userId,
+    this.curMsgIndex,
+    this.readMsgIndex,
+  });
+
+  final int roomId;
+  final int userId;
+  final int? curMsgIndex;
+  final int? readMsgIndex;
+
+  static ImClientIndexEvent? fromPayload(Object? payload) {
+    final source = payload is Map
+        ? payload.map((key, value) => MapEntry(key.toString(), value))
+        : null;
+    if (source == null) {
+      return null;
+    }
+    final roomId = ImSendAck._toNullableInt(source['roomId']);
+    final userId = ImSendAck._toNullableInt(source['userId']);
+    if (roomId == null || roomId <= 0 || userId == null || userId <= 0) {
+      return null;
+    }
+    return ImClientIndexEvent(
+      roomId: roomId,
+      userId: userId,
+      curMsgIndex: ImSendAck._toNullableInt(source['curMsgIndex']),
+      readMsgIndex: ImSendAck._toNullableInt(source['readMsgIndex']),
+    );
+  }
+
+  @override
+  String toString() {
+    return 'ImClientIndexEvent(roomId: $roomId, userId: $userId, '
+        'curMsgIndex: $curMsgIndex, readMsgIndex: $readMsgIndex)';
   }
 }
 

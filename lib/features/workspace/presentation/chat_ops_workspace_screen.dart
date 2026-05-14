@@ -1,20 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../../app/locale/app_locale_provider.dart';
 import '../../../core/security/desktop_device_id.dart';
 import '../../../core/security/secure_store_provider.dart';
+import '../../../core/websocket/connection_status.dart';
 import '../../../core/websocket/im_session_manager.dart';
-import '../../../core/websocket/im_socket_client.dart' show ImSyncRecordAck;
+import '../../../core/websocket/im_socket_client.dart'
+    show ImClientIndexEvent, ImSyncRecordAck;
 import '../../../l10n/generated/app_localizations.dart';
 import '../../app_account_auth/application/app_account_auth_controller.dart';
 import '../../app_account_auth/domain/app_user_session.dart';
 import '../../app_account_auth/presentation/app_account_history_dialog.dart';
 import '../../messages/data/chat_conversation_api.dart';
+import '../../messages/data/chat_media_upload_api.dart';
 import '../../messages/data/direct_chat_api.dart';
 import '../../messages/data/local_chat_peer_profile_store.dart';
 import '../../messages/data/local_chat_message_store.dart';
@@ -28,6 +37,63 @@ enum _RailTab { chats, updates, communities, calls }
 
 const _maxChatMessageLength = 3000;
 const _collapsedMessageMaxLines = 15;
+const _maxChatVideoBytes = 50 * 1024 * 1024;
+const _chatTextFontSize = 14.2;
+const _standaloneEmojiScale = 3.0;
+final _standaloneEmojiPattern = RegExp(
+  r'^(?:[\u00a9\u00ae\u203c\u2049\u2122\u2139\u2194-\u21aa\u231a-\u231b\u2328\u23cf\u23e9-\u23f3\u23f8-\u23fa\u24c2\u25aa-\u25ab\u25b6\u25c0\u25fb-\u25fe\u2600-\u27bf\u2934-\u2935\u2b05-\u2b55\u3030\u303d\u3297\u3299\ufe0f\u200d]|\ud83c[\udde6-\uddff\udf00-\udfff]|\ud83d[\udc00-\ude4f\ude80-\udeff]|\ud83e[\udd00-\uddff]|\s)+$',
+);
+
+const _emojiGameSendType = 47;
+const _chatImageExtensions = <String>[
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'bmp',
+  'heic',
+  'heif',
+];
+const _chatVideoExtensions = <String>[
+  'mp4',
+  'mov',
+  'm4v',
+  'avi',
+  'mkv',
+  'webm',
+];
+
+class _SelectedChatMedia {
+  const _SelectedChatMedia({
+    required this.path,
+    required this.fileName,
+    required this.isVideo,
+    required this.fileSizeBytes,
+  });
+
+  final String path;
+  final String fileName;
+  final bool isVideo;
+  final int fileSizeBytes;
+}
+
+class _MediaDimensions {
+  const _MediaDimensions({required this.width, required this.height});
+
+  final int width;
+  final int height;
+}
+
+final _desktopChatEmojis = <String>[
+  '👌',
+  '👍',
+  '✌',
+  ...[
+    for (var codePoint = 0x1F600; codePoint <= 0x1F64F; codePoint++)
+      String.fromCharCode(codePoint),
+  ],
+];
 
 class ChatOpsWorkspaceScreen extends ConsumerWidget {
   const ChatOpsWorkspaceScreen({super.key});
@@ -101,7 +167,10 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   Timer? _searchDebounce;
   Timer? _activeConversationSyncTimer;
   StreamSubscription<Map<String, dynamic>>? _incomingMessageSubscription;
+  StreamSubscription<ImClientIndexEvent>? _clientIndexSubscription;
+  StreamSubscription<ConnectionStatus>? _connectionStatusSubscription;
   bool _isActiveConversationSyncing = false;
+  ConnectionStatus _connectionStatus = ConnectionStatus.idle;
   String _searchQuery = '';
   String? _searchNotice;
   String? _chatNotice;
@@ -122,6 +191,18 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         .read(imSessionManagerProvider)
         .messageStream
         .listen(_handleIncomingSocketMessage);
+    _clientIndexSubscription = ref
+        .read(imSessionManagerProvider)
+        .clientIndexStream
+        .listen(_handleClientIndexEvent);
+    _connectionStatusSubscription = ref
+        .read(imSessionManagerProvider)
+        .statusStream
+        .listen((status) {
+          if (mounted) {
+            setState(() => _connectionStatus = status);
+          }
+        });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncImSocketSession();
       unawaited(_loadRecentConversationPreviews());
@@ -150,6 +231,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     _searchDebounce?.cancel();
     _activeConversationSyncTimer?.cancel();
     unawaited(_incomingMessageSubscription?.cancel());
+    unawaited(_clientIndexSubscription?.cancel());
+    unawaited(_connectionStatusSubscription?.cancel());
     super.dispose();
   }
 
@@ -207,9 +290,14 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           Expanded(
             child: _ChatSection(
               conversation: selectedConversation,
+              appAccountSession: widget.appAccountSession,
+              connectionStatus: _connectionStatus,
               messages: messages,
               draft: draftKey == null ? '' : _drafts[draftKey] ?? '',
               l10n: l10n,
+              emptyMessage: widget.appAccountSession == null
+                  ? l10n.workspaceUsersLoginRequired
+                  : l10n.selectConversationFirst,
               onDraftChanged: (value) {
                 if (draftKey != null) {
                   _drafts[draftKey] = value;
@@ -218,6 +306,12 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
               onSend: selectedConversation == null
                   ? null
                   : (text) => _sendLocalMessage(selectedConversation, text),
+              onSendEmojiGame: selectedConversation == null
+                  ? null
+                  : (game) => _sendEmojiGameMessage(selectedConversation, game),
+              onSendMedia: selectedConversation == null
+                  ? null
+                  : (media) => _sendMediaMessage(selectedConversation, media),
             ),
           ),
         ],
@@ -437,7 +531,11 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         time: _formatConversationTime(latest.createdAt),
         delivered:
             latest.direction == ChatMessageDirection.outgoing &&
-            latest.sendStatus == ChatMessageSendStatus.sent,
+            (latest.sendStatus == ChatMessageSendStatus.sent ||
+                latest.sendStatus == ChatMessageSendStatus.read),
+        deliveredRead:
+            latest.direction == ChatMessageDirection.outgoing &&
+            latest.sendStatus == ChatMessageSendStatus.read,
         unread: latest.direction == ChatMessageDirection.incoming
             ? conversation.unread
             : 0,
@@ -502,9 +600,14 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         avatarUrl: profile?.avatarUrl,
         targetUserId: peerUserId,
         roomId: message.roomId,
+        isOnline: false,
         delivered:
             message.direction == ChatMessageDirection.outgoing &&
-            message.sendStatus == ChatMessageSendStatus.sent,
+            (message.sendStatus == ChatMessageSendStatus.sent ||
+                message.sendStatus == ChatMessageSendStatus.read),
+        deliveredRead:
+            message.direction == ChatMessageDirection.outgoing &&
+            message.sendStatus == ChatMessageSendStatus.read,
         unread: message.direction == ChatMessageDirection.incoming ? 1 : 0,
         messages: const [],
       );
@@ -800,6 +903,322 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     }
   }
 
+  Future<void> _sendEmojiGameMessage(
+    _Conversation conversation,
+    _EmojiGameSelection game,
+  ) async {
+    final session = widget.appAccountSession;
+    final peerUserId = conversation.targetUserId;
+    if (session == null || peerUserId == null || peerUserId <= 0) {
+      return;
+    }
+    final now = DateTime.now();
+    final clientMessageId = now.microsecondsSinceEpoch.toString();
+    final initialConversationKey = directConversationKey(
+      appUserId: session.id,
+      peerUserId: peerUserId,
+    );
+    final localMessage = LocalChatMessage(
+      localId: 'local_$clientMessageId',
+      appUserId: session.id,
+      peerUserId: peerUserId,
+      roomId: _roomIdFor(conversation),
+      conversationKey: initialConversationKey,
+      direction: ChatMessageDirection.outgoing,
+      text: game.previewText,
+      createdAt: now,
+      updatedAt: now,
+      sendStatus: ChatMessageSendStatus.pending,
+      clientMessageId: clientMessageId,
+    );
+
+    final store = await ref.read(localChatMessageStoreProvider.future);
+    await store.upsert(localMessage);
+    debugPrint(
+      '[CHAT_OPS][LOCAL][UPSERT] phase=emoji_game_pending '
+      'sender=${session.id} peer=$peerUserId room=${localMessage.roomId} '
+      'local=${localMessage.localId} type=${game.type} value=${game.value}',
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      final key = _storageKeyFor(conversation);
+      final current = [...?_storedMessages[key]];
+      current.add(localMessage);
+      _storedMessages[key] = current;
+      _rememberRecentMessageInMemory(localMessage);
+    });
+
+    try {
+      final roomId = await _ensureConversationRoomId(conversation);
+      if (roomId == null || roomId <= 0) {
+        throw const DirectChatException('Unable to open chat.');
+      }
+      final updated = localMessage.copyWith(
+        roomId: roomId,
+        sendStatus: ChatMessageSendStatus.pending,
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(updated);
+      _replaceStoredMessage(conversation, updated);
+      ref.read(imSessionManagerProvider).refreshChatRooms();
+
+      final ack = await ref
+          .read(imSessionManagerProvider)
+          .sendEmojiGameMessage(
+            roomId: roomId,
+            type: game.type,
+            value: game.value,
+            clientMessageId: clientMessageId,
+          );
+      final completed = updated.copyWith(
+        sendStatus: ack.success
+            ? ChatMessageSendStatus.sent
+            : ChatMessageSendStatus.failed,
+        serverMessageId: ack.serverMessageId?.toString(),
+        errorMessage: ack.success
+            ? null
+            : (ack.message == null || ack.message!.trim().isEmpty
+                  ? 'Emoji send failed'
+                  : ack.message),
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(completed);
+      debugPrint(
+        '[CHAT_OPS][LOCAL][UPSERT] phase=emoji_game_completed '
+        'sender=${session.id} peer=$peerUserId room=$roomId '
+        'local=${completed.localId} server=${completed.serverMessageId} '
+        'status=${completed.sendStatus.name}',
+      );
+      _replaceStoredMessage(conversation, completed);
+      unawaited(
+        _syncRemoteMessages(
+          conversation,
+          cachedMessages: [completed],
+          roomIdOverride: roomId,
+        ),
+      );
+    } catch (error) {
+      final failed = localMessage.copyWith(
+        sendStatus: ChatMessageSendStatus.failed,
+        errorMessage: error.toString(),
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(failed);
+      debugPrint(
+        '[CHAT_OPS][LOCAL][UPSERT] phase=emoji_game_failed '
+        'sender=${session.id} peer=$peerUserId local=${failed.localId} '
+        'error=$error',
+      );
+      _replaceStoredMessage(conversation, failed);
+    }
+  }
+
+  Future<bool> _sendMediaMessage(
+    _Conversation conversation,
+    _SelectedChatMedia media,
+  ) async {
+    final session = widget.appAccountSession;
+    final peerUserId = conversation.targetUserId;
+    if (session == null || peerUserId == null || peerUserId <= 0) {
+      return false;
+    }
+    final now = DateTime.now();
+    final clientMessageId = now.microsecondsSinceEpoch.toString();
+    final initialConversationKey = directConversationKey(
+      appUserId: session.id,
+      peerUserId: peerUserId,
+    );
+    final requestLang = _requestLangOf(context);
+    final previewText = media.isVideo ? '[Video]' : '[Photo]';
+    final localImageDimensions = media.isVideo
+        ? null
+        : await _readImageDimensions(media.path);
+    final localMessage = LocalChatMessage(
+      localId: 'local_$clientMessageId',
+      appUserId: session.id,
+      peerUserId: peerUserId,
+      roomId: _roomIdFor(conversation),
+      conversationKey: initialConversationKey,
+      direction: ChatMessageDirection.outgoing,
+      text: previewText,
+      createdAt: now,
+      updatedAt: now,
+      sendStatus: ChatMessageSendStatus.pending,
+      clientMessageId: clientMessageId,
+      sendType: 2,
+      msgData: jsonEncode([
+        {
+          'localUrl': media.path,
+          'mediaType': media.isVideo ? 3 : 2,
+          if (localImageDimensions != null) 'width': localImageDimensions.width,
+          if (localImageDimensions != null)
+            'height': localImageDimensions.height,
+        },
+      ]),
+      localMediaPath: media.path,
+    );
+
+    final store = await ref.read(localChatMessageStoreProvider.future);
+    await store.upsert(localMessage);
+    if (!mounted) {
+      return false;
+    }
+    setState(() {
+      final key = _storageKeyFor(conversation);
+      final current = [...?_storedMessages[key]];
+      current.add(localMessage);
+      _storedMessages[key] = current;
+      _rememberRecentMessageInMemory(localMessage);
+    });
+
+    try {
+      final roomId = await _ensureConversationRoomId(conversation);
+      if (roomId == null || roomId <= 0) {
+        throw const DirectChatException('Unable to open chat.');
+      }
+      final updated = localMessage.copyWith(
+        roomId: roomId,
+        sendStatus: ChatMessageSendStatus.pending,
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(updated);
+      _replaceStoredMessage(conversation, updated);
+      ref.read(imSessionManagerProvider).refreshChatRooms();
+
+      final uploadApi = ref.read(chatMediaUploadApiProvider);
+      final mediaData = media.isVideo
+          ? await _uploadVideoForChat(
+              media,
+              uploadApi: uploadApi,
+              certificate: session.certificate,
+              deviceId: session.deviceId,
+              lang: requestLang,
+            )
+          : await _uploadImageForChat(
+              media,
+              uploadApi: uploadApi,
+              certificate: session.certificate,
+              deviceId: session.deviceId,
+              lang: requestLang,
+            );
+
+      final ack = await ref
+          .read(imSessionManagerProvider)
+          .sendMediaMessage(
+            roomId: roomId,
+            msgData: [mediaData],
+            clientMessageId: clientMessageId,
+          );
+      final completed = updated.copyWith(
+        sendStatus: ack.success
+            ? ChatMessageSendStatus.sent
+            : ChatMessageSendStatus.failed,
+        serverMessageId: ack.serverMessageId?.toString(),
+        errorMessage: ack.success
+            ? null
+            : (ack.message == null || ack.message!.trim().isEmpty
+                  ? 'Media send failed'
+                  : ack.message),
+        msgData: jsonEncode(mediaData),
+        localMediaPath: media.path,
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(completed);
+      _replaceStoredMessage(conversation, completed);
+      unawaited(
+        _syncRemoteMessages(
+          conversation,
+          cachedMessages: [completed],
+          roomIdOverride: roomId,
+        ),
+      );
+      return ack.success;
+    } catch (error) {
+      final failed = localMessage.copyWith(
+        sendStatus: ChatMessageSendStatus.failed,
+        errorMessage: error.toString(),
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(failed);
+      _replaceStoredMessage(conversation, failed);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(error.toString()),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+      }
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>> _uploadImageForChat(
+    _SelectedChatMedia media, {
+    required ChatMediaUploadApi uploadApi,
+    required String certificate,
+    required String deviceId,
+    required String lang,
+  }) async {
+    final dimensions = await _readImageDimensions(media.path);
+    final imageUrl = await uploadApi.uploadTempImage(
+      path: media.path,
+      certificate: certificate,
+      deviceId: deviceId,
+      lang: lang,
+    );
+    return {
+      'mediaCover': imageUrl,
+      'media': imageUrl,
+      'mediaType': 2,
+      if (dimensions != null) 'width': dimensions.width,
+      if (dimensions != null) 'height': dimensions.height,
+    };
+  }
+
+  Future<Map<String, dynamic>> _uploadVideoForChat(
+    _SelectedChatMedia media, {
+    required ChatMediaUploadApi uploadApi,
+    required String certificate,
+    required String deviceId,
+    required String lang,
+  }) async {
+    final coverPath = await _createVideoCover(media.path);
+    if (coverPath == null || coverPath.trim().isEmpty) {
+      throw const ChatMediaUploadException('Video cover generation failed.');
+    }
+    try {
+      final dimensions = await _readImageDimensions(coverPath);
+      final coverUrl = await uploadApi.uploadTempImage(
+        path: coverPath,
+        certificate: certificate,
+        deviceId: deviceId,
+        lang: lang,
+      );
+      final videoUrl = await uploadApi.uploadTempVideo(
+        path: media.path,
+        certificate: certificate,
+        deviceId: deviceId,
+        lang: lang,
+      );
+      return {
+        'mediaCover': coverUrl,
+        'media': videoUrl,
+        'mediaType': 3,
+        if (dimensions != null) 'width': dimensions.width,
+        if (dimensions != null) 'height': dimensions.height,
+      };
+    } finally {
+      final coverFile = File(coverPath);
+      unawaited(coverFile.delete().catchError((_) => coverFile));
+    }
+  }
+
   String _messageTextForSend(String text) {
     final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     if (normalized.trim().isEmpty) {
@@ -841,6 +1260,40 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
 
     final socketMessage = _IncomingSocketMessage.fromJson(payload);
     await _persistIncomingSocketMessage(socketMessage, session);
+  }
+
+  Future<void> _handleClientIndexEvent(ImClientIndexEvent event) async {
+    final session = widget.appAccountSession;
+    final readMsgIndex = event.readMsgIndex;
+    if (session == null ||
+        event.userId == session.id ||
+        readMsgIndex == null ||
+        readMsgIndex <= 0) {
+      return;
+    }
+    if (!_isReadReceiptEnabledForRoom(event.roomId)) {
+      return;
+    }
+    final store = await ref.read(localChatMessageStoreProvider.future);
+    final updatedMessages = await store.markOutgoingReadByRoom(
+      appUserId: session.id,
+      roomId: event.roomId,
+      readMsgIndex: readMsgIndex,
+    );
+    if (updatedMessages.isEmpty || !mounted) {
+      return;
+    }
+    setState(() {
+      for (final message in updatedMessages) {
+        _upsertStoredMessageInMemory(message.conversationKey, message);
+        _rememberRecentMessageInMemory(message);
+      }
+    });
+    debugPrint(
+      '[CHAT_OPS][LOCAL][READ_INDEX] sender=${session.id} '
+      'room=${event.roomId} readMsgIndex=$readMsgIndex '
+      'updated=${updatedMessages.length}',
+    );
   }
 
   Future<void> _syncRemoteMessages(
@@ -967,6 +1420,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       sendStatus: ChatMessageSendStatus.sent,
       clientMessageId: socketMessage.clientMessageId,
       serverMessageId: socketMessage.id?.toString(),
+      sendType: socketMessage.sendType,
+      msgData: socketMessage.msgDataJson,
     );
 
     final store = await ref.read(localChatMessageStoreProvider.future);
@@ -985,6 +1440,34 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _upsertStoredMessageInMemory(peerKey, localMessage);
       _rememberRecentMessageInMemory(localMessage);
     });
+    if (!isOutgoing) {
+      _reportActiveConversationReadIndex(localMessage);
+    }
+  }
+
+  void _reportActiveConversationReadIndex(LocalChatMessage message) {
+    if (message.direction != ChatMessageDirection.incoming ||
+        message.roomId == null ||
+        message.roomId! <= 0) {
+      return;
+    }
+    final activeConversation = _selectedConversation();
+    if (activeConversation?.targetUserId != message.peerUserId) {
+      return;
+    }
+    final serverId = int.tryParse(message.serverMessageId ?? '') ?? 0;
+    if (serverId <= 0) {
+      return;
+    }
+    unawaited(
+      ref
+          .read(imSessionManagerProvider)
+          .syncClientIndex(
+            roomId: message.roomId!,
+            curMsgIndex: serverId,
+            readMsgIndex: serverId,
+          ),
+    );
   }
 
   int? _peerUserIdForRoomId(int roomId) {
@@ -994,6 +1477,22 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       }
     }
     return null;
+  }
+
+  bool _isReadReceiptEnabledForRoom(int roomId) {
+    final l10n = AppLocalizations.of(context);
+    final conversations = [
+      ..._chatConversations,
+      ..._remoteConversations.values.expand((items) => items),
+      ..._searchConversations,
+      ..._conversationsForTab(l10n, _selectedTab),
+    ];
+    for (final conversation in conversations) {
+      if (conversation.roomId == roomId) {
+        return conversation.readReceiptEnabled;
+      }
+    }
+    return true;
   }
 
   void _upsertStoredMessageInMemory(String key, LocalChatMessage localMessage) {
@@ -1007,7 +1506,12 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
               message.serverMessageId == localMessage.serverMessageId),
     );
     if (existingIndex >= 0) {
-      current[existingIndex] = localMessage;
+      final existing = current[existingIndex];
+      current[existingIndex] =
+          existing.sendStatus == ChatMessageSendStatus.read &&
+              localMessage.sendStatus == ChatMessageSendStatus.sent
+          ? existing
+          : localMessage;
     } else {
       current.add(localMessage);
     }
@@ -1102,9 +1606,41 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           widget.appAccountSession?.id != session.id) {
         return;
       }
+      final userInfos = await ref
+          .read(chatConversationApiProvider)
+          .fetchUserInfos(
+            certificate: session.certificate,
+            deviceId: deviceId,
+            lang: requestLang,
+            userIds: records.map((record) => record.peerUserId).toList(),
+          );
+      if (!mounted ||
+          requestId != _loadRequestId ||
+          widget.appAccountSession?.id != session.id) {
+        return;
+      }
       unawaited(_persistChatConversationProfiles(records));
+      final userInfoById = {
+        for (final userInfo in userInfos) userInfo.id: userInfo,
+      };
       final conversations = records
-          .map(_ConversationData.fromChatConversation)
+          .map((record) => _ConversationData.fromChatConversation(l10n, record))
+          .map((conversation) {
+            final peerUserId = conversation.targetUserId;
+            final userInfo = peerUserId == null
+                ? null
+                : userInfoById[peerUserId];
+            return userInfo == null
+                ? conversation
+                : conversation.copyWith(
+                    name: userInfo.displayName,
+                    message: userInfo.isOnline
+                        ? l10n.workspaceUserOnline
+                        : l10n.appAccountStatusOffline,
+                    avatarUrl: userInfo.avatarUrl,
+                    isOnline: userInfo.isOnline,
+                  );
+          })
           .toList();
       setState(() {
         _chatConversations = conversations;
@@ -2046,6 +2582,7 @@ class _ConversationTile extends StatelessWidget {
                 color: item.color,
                 label: item.emoji,
                 avatarUrl: item.avatarUrl,
+                online: item.isOnline,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2120,10 +2657,12 @@ class _ConversationTile extends StatelessWidget {
                       color: Color(0xff667781),
                     )
                   else if (item.delivered)
-                    const Icon(
+                    Icon(
                       Icons.done_all,
                       size: 16,
-                      color: Color(0xff53bdeb),
+                      color: item.deliveredRead
+                          ? const Color(0xff53bdeb)
+                          : const Color(0xff667781),
                     )
                   else
                     const SizedBox(height: 20),
@@ -2142,33 +2681,58 @@ class _LetterAvatar extends StatelessWidget {
     required this.color,
     required this.label,
     this.avatarUrl,
+    this.online = false,
     this.size = 60,
   });
 
   final Color color;
   final String label;
   final String? avatarUrl;
+  final bool online;
   final double size;
 
   @override
   Widget build(BuildContext context) {
     final url = avatarUrl?.trim();
-    return Container(
+    return SizedBox(
       width: size,
       height: size,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      alignment: Alignment.center,
-      clipBehavior: Clip.antiAlias,
-      child: url != null && url.isNotEmpty
-          ? Image.network(
-              url,
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) =>
-                  _AvatarFallback(color: color, label: label, size: size),
-            )
-          : _AvatarFallback(color: color, label: label, size: size),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            clipBehavior: Clip.antiAlias,
+            child: url != null && url.isNotEmpty
+                ? Image.network(
+                    url,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        _AvatarFallback(color: color, label: label, size: size),
+                  )
+                : _AvatarFallback(color: color, label: label, size: size),
+          ),
+          if (online)
+            Positioned(
+              right: 1,
+              bottom: 1,
+              child: Container(
+                width: size * 0.22,
+                height: size * 0.22,
+                decoration: BoxDecoration(
+                  color: const Color(0xff1da855),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -2204,19 +2768,29 @@ class _AvatarFallback extends StatelessWidget {
 class _ChatSection extends StatefulWidget {
   const _ChatSection({
     required this.conversation,
+    required this.appAccountSession,
+    required this.connectionStatus,
     required this.messages,
     required this.draft,
     required this.l10n,
+    required this.emptyMessage,
     required this.onDraftChanged,
     required this.onSend,
+    required this.onSendEmojiGame,
+    required this.onSendMedia,
   });
 
   final _Conversation? conversation;
+  final AppUserSession? appAccountSession;
+  final ConnectionStatus connectionStatus;
   final List<_ChatMessage> messages;
   final String draft;
   final AppLocalizations l10n;
+  final String emptyMessage;
   final ValueChanged<String> onDraftChanged;
   final ValueChanged<String>? onSend;
+  final ValueChanged<_EmojiGameSelection>? onSendEmojiGame;
+  final Future<bool> Function(_SelectedChatMedia media)? onSendMedia;
 
   @override
   State<_ChatSection> createState() => _ChatSectionState();
@@ -2322,7 +2896,7 @@ class _ChatSectionState extends State<_ChatSection> {
   Widget build(BuildContext context) {
     final conversation = widget.conversation;
     if (conversation == null) {
-      return _ChatEmptyState(message: widget.l10n.selectConversationFirst);
+      return _ChatEmptyState(message: widget.emptyMessage);
     }
 
     return SizedBox.expand(
@@ -2340,13 +2914,16 @@ class _ChatSectionState extends State<_ChatSection> {
             top: 0,
             child: _ChatHeader(
               conversation: conversation,
+              appAccountSession: widget.appAccountSession,
+              connectionStatus: widget.connectionStatus,
+              l10n: widget.l10n,
               onlineText: widget.l10n.workspaceUserOnline,
             ),
           ),
           Positioned(
             left: 0,
             right: 0,
-            top: 81,
+            top: 150,
             bottom: 80,
             child: _ScrollableMessageList(
               controller: _messageScrollController,
@@ -2371,6 +2948,8 @@ class _ChatSectionState extends State<_ChatSection> {
               hintText: widget.l10n.workspaceMessageInputHint,
               onChanged: widget.onDraftChanged,
               onSend: widget.onSend,
+              onSendEmojiGame: widget.onSendEmojiGame,
+              onSendMedia: widget.onSendMedia,
             ),
           ),
         ],
@@ -2459,6 +3038,7 @@ class _MessageListItem extends StatelessWidget {
             text: message.text,
             time: message.time,
             status: message.sendStatus,
+            media: message.media,
           ),
         ),
       );
@@ -2473,6 +3053,7 @@ class _MessageListItem extends StatelessWidget {
           text: message.text,
           time: message.time,
           singleLine: message.singleLine,
+          media: message.media,
         ),
       ),
     );
@@ -2525,23 +3106,36 @@ class _JumpToBottomButton extends StatelessWidget {
 }
 
 class _ChatHeader extends StatelessWidget {
-  const _ChatHeader({required this.conversation, required this.onlineText});
+  const _ChatHeader({
+    required this.conversation,
+    required this.appAccountSession,
+    required this.connectionStatus,
+    required this.l10n,
+    required this.onlineText,
+  });
 
   final _Conversation conversation;
+  final AppUserSession? appAccountSession;
+  final ConnectionStatus connectionStatus;
+  final AppLocalizations l10n;
   final String onlineText;
 
   @override
   Widget build(BuildContext context) {
+    final peerUserId = conversation.targetUserId;
+    final peerText = peerUserId == null ? '' : 'UID $peerUserId';
+
     return Container(
-      height: 81,
+      height: 96,
       color: const Color(0xfff7f7fc),
-      padding: const EdgeInsets.only(left: 24, right: 18, top: 16),
+      padding: const EdgeInsets.only(left: 24, right: 18, top: 12, bottom: 10),
       child: Row(
         children: [
           _LetterAvatar(
             color: conversation.color,
             label: conversation.emoji,
             avatarUrl: conversation.avatarUrl,
+            online: conversation.isOnline,
             size: 48,
           ),
           const SizedBox(width: 16),
@@ -2561,14 +3155,29 @@ class _ChatHeader extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
+                if (peerText.isNotEmpty)
+                  Text(
+                    peerText,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xff667781),
+                      fontSize: 11,
+                      height: 14 / 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 Row(
                   children: [
-                    const _OnlineDot(),
+                    _OnlineDot(online: conversation.isOnline),
                     const SizedBox(width: 5),
                     Text(
-                      onlineText,
-                      style: const TextStyle(
-                        color: Color(0xff54656f),
+                      conversation.isOnline
+                          ? onlineText
+                          : l10n.appAccountStatusOffline,
+                      style: TextStyle(
+                        color: conversation.isOnline
+                            ? const Color(0xff54656f)
+                            : const Color(0xff8d969c),
                         fontSize: 12,
                         height: 16 / 12,
                       ),
@@ -2594,15 +3203,17 @@ class _ChatHeader extends StatelessWidget {
 }
 
 class _OnlineDot extends StatelessWidget {
-  const _OnlineDot();
+  const _OnlineDot({required this.online});
+
+  final bool online;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 6,
       height: 6,
-      decoration: const BoxDecoration(
-        color: Color(0xff1da855),
+      decoration: BoxDecoration(
+        color: online ? const Color(0xff1da855) : const Color(0xffc7d0d5),
         shape: BoxShape.circle,
       ),
     );
@@ -2652,15 +3263,18 @@ class _IncomingBubble extends StatelessWidget {
     required this.text,
     required this.time,
     this.singleLine = false,
+    this.media,
   });
 
   final double width;
   final String text;
   final String time;
   final bool singleLine;
+  final _ChatMedia? media;
 
   @override
   Widget build(BuildContext context) {
+    final media = this.media;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -2673,29 +3287,39 @@ class _IncomingBubble extends StatelessWidget {
           ),
         ),
         Container(
-          width: width,
-          padding: EdgeInsets.fromLTRB(9, 6, singleLine ? 38 : 7, 3),
+          width: media == null ? width : media.bubbleWidth,
+          padding: media == null
+              ? EdgeInsets.fromLTRB(9, 6, singleLine ? 38 : 7, 3)
+              : const EdgeInsets.fromLTRB(4, 4, 4, 3),
           decoration: _bubbleDecoration(Colors.white),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _ExpandableMessageText(
-                  text,
-                  style: const TextStyle(
-                    color: Color(0xff111b21),
-                    fontSize: 14.2,
-                    height: 19 / 14.2,
+              if (media == null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _ExpandableMessageText(
+                    text,
+                    style: const TextStyle(
+                      color: Color(0xff111b21),
+                      fontSize: _chatTextFontSize,
+                      height: 19 / _chatTextFontSize,
+                    ),
                   ),
-                ),
-              ),
-              Text(
-                time,
-                style: const TextStyle(
-                  color: Color(0xff667781),
-                  fontSize: 10,
-                  height: 15 / 10,
+                )
+              else
+                _MediaMessagePreview(media: media),
+              Padding(
+                padding: media == null
+                    ? EdgeInsets.zero
+                    : const EdgeInsets.only(top: 2, right: 2),
+                child: Text(
+                  time,
+                  style: const TextStyle(
+                    color: Color(0xff667781),
+                    fontSize: 10,
+                    height: 15 / 10,
+                  ),
                 ),
               ),
             ],
@@ -2712,51 +3336,64 @@ class _OutgoingBubble extends StatelessWidget {
     required this.text,
     required this.time,
     required this.status,
+    this.media,
   });
 
   final double width;
   final String text;
   final String time;
   final ChatMessageSendStatus status;
+  final _ChatMedia? media;
 
   @override
   Widget build(BuildContext context) {
+    final media = this.media;
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
-          width: width,
-          padding: const EdgeInsets.fromLTRB(9, 6, 7, 3),
+          width: media == null ? width : media.bubbleWidth,
+          padding: media == null
+              ? const EdgeInsets.fromLTRB(9, 6, 7, 3)
+              : const EdgeInsets.fromLTRB(4, 4, 4, 3),
           decoration: _bubbleDecoration(const Color(0xffd9fdd3)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: _ExpandableMessageText(
-                  text,
-                  style: const TextStyle(
-                    color: Color(0xff111b21),
-                    fontSize: 14.2,
-                    height: 19 / 14.2,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 1),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    time,
+              if (media == null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _ExpandableMessageText(
+                    text,
                     style: const TextStyle(
-                      color: Color(0xff667781),
-                      fontSize: 10,
-                      height: 15 / 10,
+                      color: Color(0xff111b21),
+                      fontSize: _chatTextFontSize,
+                      height: 19 / _chatTextFontSize,
                     ),
                   ),
-                  const SizedBox(width: 3),
-                  _MessageStatusIcon(status: status),
-                ],
+                )
+              else
+                _MediaMessagePreview(media: media),
+              SizedBox(height: media == null ? 1 : 2),
+              Padding(
+                padding: media == null
+                    ? EdgeInsets.zero
+                    : const EdgeInsets.only(right: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      time,
+                      style: const TextStyle(
+                        color: Color(0xff667781),
+                        fontSize: 10,
+                        height: 15 / 10,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    _MessageStatusIcon(status: status),
+                  ],
+                ),
               ),
             ],
           ),
@@ -2801,6 +3438,11 @@ class _MessageStatusIcon extends StatelessWidget {
       ChatMessageSendStatus.sent => const Icon(
         Icons.done_all,
         size: 15,
+        color: Color(0xff667781),
+      ),
+      ChatMessageSendStatus.read => const Icon(
+        Icons.done_all,
+        size: 15,
         color: Color(0xff53bdeb),
       ),
     };
@@ -2831,11 +3473,12 @@ class _ExpandableMessageTextState extends State<_ExpandableMessageText> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final textStyle = _styleForMessageText(widget.text, widget.style);
     return LayoutBuilder(
       builder: (context, constraints) {
         final textDirection = Directionality.of(context);
         final painter = TextPainter(
-          text: TextSpan(text: widget.text, style: widget.style),
+          text: TextSpan(text: widget.text, style: textStyle),
           maxLines: _collapsedMessageMaxLines,
           textDirection: textDirection,
         )..layout(maxWidth: constraints.maxWidth);
@@ -2848,7 +3491,7 @@ class _ExpandableMessageTextState extends State<_ExpandableMessageText> {
               widget.text,
               maxLines: _expanded ? null : _collapsedMessageMaxLines,
               overflow: _expanded ? TextOverflow.visible : TextOverflow.fade,
-              style: widget.style,
+              style: textStyle,
             ),
             if (isOverflowing && !_expanded)
               Padding(
@@ -2858,7 +3501,7 @@ class _ExpandableMessageTextState extends State<_ExpandableMessageText> {
                   onTap: () => setState(() => _expanded = true),
                   child: Text(
                     l10n.messageReadMore,
-                    style: widget.style.copyWith(
+                    style: textStyle.copyWith(
                       color: const Color(0xff1da855),
                       fontWeight: FontWeight.w700,
                     ),
@@ -2868,6 +3511,347 @@ class _ExpandableMessageTextState extends State<_ExpandableMessageText> {
           ],
         );
       },
+    );
+  }
+
+  TextStyle _styleForMessageText(String text, TextStyle baseStyle) {
+    if (!_isStandaloneEmojiMessage(text)) {
+      return baseStyle;
+    }
+    final baseFontSize = baseStyle.fontSize ?? _chatTextFontSize;
+    return baseStyle.copyWith(
+      fontSize: baseFontSize * _standaloneEmojiScale,
+      height: 1.08,
+    );
+  }
+
+  bool _isStandaloneEmojiMessage(String text) {
+    final normalized = text.trim();
+    if (normalized.isEmpty || normalized.length > 32) {
+      return false;
+    }
+    if (RegExp(r'[A-Za-z0-9\u4e00-\u9fff]').hasMatch(normalized)) {
+      return false;
+    }
+    return _standaloneEmojiPattern.hasMatch(normalized);
+  }
+}
+
+const _mediaBubbleMaxWidth = 248.0;
+const _mediaBubbleMaxHeight = 260.0;
+const _mediaBubbleMinWidth = 132.0;
+const _mediaBubbleMinHeight = 96.0;
+
+class _MediaMessagePreview extends StatelessWidget {
+  const _MediaMessagePreview({required this.media});
+
+  final _ChatMedia media;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = media.previewSource;
+    final size = media.previewSize;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showMediaViewer(context, media),
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (source.isEmpty)
+                  _MediaMessageFallback(isVideo: media.isVideo)
+                else if (source.startsWith('http'))
+                  Image.network(
+                    source,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        _MediaMessageFallback(isVideo: media.isVideo),
+                  )
+                else
+                  Image.file(
+                    File(source),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        _MediaMessageFallback(isVideo: media.isVideo),
+                  ),
+                if (media.isVideo)
+                  Center(
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: const Color(0xff0b141a).withValues(alpha: 0.58),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 34,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMediaViewer(BuildContext context, _ChatMedia media) {
+    showDialog<void>(
+      context: context,
+      barrierColor: const Color(0xdd0b141a),
+      builder: (_) => _MediaViewerDialog(media: media),
+    );
+  }
+}
+
+class _MediaMessageFallback extends StatelessWidget {
+  const _MediaMessageFallback({required this.isVideo});
+
+  final bool isVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xffe8ecef),
+      alignment: Alignment.center,
+      child: Icon(
+        isVideo ? Icons.videocam_rounded : Icons.image_rounded,
+        color: const Color(0xff667781),
+        size: 44,
+      ),
+    );
+  }
+}
+
+class _MediaViewerDialog extends StatelessWidget {
+  const _MediaViewerDialog({required this.media});
+
+  final _ChatMedia media;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = media.viewerSource;
+    return Dialog.fullscreen(
+      backgroundColor: Colors.transparent,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(48),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.sizeOf(context).width - 96,
+                    maxHeight: MediaQuery.sizeOf(context).height - 96,
+                  ),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (media.isVideo && source.isNotEmpty)
+                        _LoopingVideoPlayer(
+                          source: source,
+                          posterSource: media.previewSource,
+                        )
+                      else if (source.isEmpty)
+                        _MediaMessageFallback(isVideo: media.isVideo)
+                      else if (source.startsWith('http'))
+                        Image.network(
+                          source,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              _MediaMessageFallback(isVideo: media.isVideo),
+                        )
+                      else
+                        Image.file(
+                          File(source),
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) =>
+                              _MediaMessageFallback(isVideo: media.isVideo),
+                        ),
+                      if (media.isVideo && source.isEmpty) _LargePlayOverlay(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 26,
+            right: 28,
+            child: IconButton.filled(
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white.withValues(alpha: 0.16),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoopingVideoPlayer extends StatefulWidget {
+  const _LoopingVideoPlayer({
+    required this.source,
+    required this.posterSource,
+    this.muted = false,
+  });
+
+  final String source;
+  final String posterSource;
+  final bool muted;
+
+  @override
+  State<_LoopingVideoPlayer> createState() => _LoopingVideoPlayerState();
+}
+
+class _LoopingVideoPlayerState extends State<_LoopingVideoPlayer> {
+  late final Player _player;
+  late final VideoController _controller;
+  StreamSubscription<bool>? _playingSubscription;
+  StreamSubscription<bool>? _bufferingSubscription;
+  bool _showPoster = true;
+  bool _isPlaying = false;
+  bool _isBuffering = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = Player();
+    _controller = VideoController(_player);
+    _playingSubscription = _player.stream.playing.listen((playing) {
+      _isPlaying = playing;
+      _maybeHidePoster();
+    });
+    _bufferingSubscription = _player.stream.buffering.listen((buffering) {
+      _isBuffering = buffering;
+      _maybeHidePoster();
+    });
+    _open();
+  }
+
+  @override
+  void didUpdateWidget(covariant _LoopingVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.source != widget.source) {
+      setState(() {
+        _showPoster = true;
+        _isPlaying = false;
+        _isBuffering = true;
+      });
+      _open();
+    }
+  }
+
+  void _maybeHidePoster() {
+    if (!_showPoster || !_isPlaying || _isBuffering) {
+      return;
+    }
+    Future<void>.delayed(const Duration(milliseconds: 650), () {
+      if (mounted && _showPoster && _isPlaying && !_isBuffering) {
+        setState(() => _showPoster = false);
+      }
+    });
+  }
+
+  Future<void> _open() async {
+    await _player.setPlaylistMode(PlaylistMode.loop);
+    await _player.setVolume(widget.muted ? 0 : 100);
+    await _player.open(Media(widget.source), play: true);
+  }
+
+  @override
+  void dispose() {
+    unawaited(_playingSubscription?.cancel());
+    unawaited(_bufferingSubscription?.cancel());
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Video(
+          controller: _controller,
+          fit: BoxFit.contain,
+          controls: AdaptiveVideoControls,
+        ),
+        AnimatedOpacity(
+          opacity: _showPoster ? 1 : 0,
+          duration: const Duration(milliseconds: 180),
+          child: IgnorePointer(
+            ignoring: !_showPoster,
+            child: _VideoStartupPoster(source: widget.posterSource),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VideoStartupPoster extends StatelessWidget {
+  const _VideoStartupPoster({required this.source});
+
+  final String source;
+
+  @override
+  Widget build(BuildContext context) {
+    if (source.isEmpty) {
+      return const ColoredBox(color: Color(0xff0b141a));
+    }
+    if (source.startsWith('http')) {
+      return Image.network(
+        source,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => const ColoredBox(color: Color(0xff0b141a)),
+      );
+    }
+    return Image.file(
+      File(source),
+      fit: BoxFit.contain,
+      errorBuilder: (_, _, _) => const ColoredBox(color: Color(0xff0b141a)),
+    );
+  }
+}
+
+class _LargePlayOverlay extends StatelessWidget {
+  const _LargePlayOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 72,
+      height: 72,
+      decoration: BoxDecoration(
+        color: const Color(0xff0b141a).withValues(alpha: 0.58),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.play_arrow_rounded,
+        color: Colors.white,
+        size: 52,
+      ),
     );
   }
 }
@@ -2892,6 +3876,8 @@ class _MessageInput extends StatefulWidget {
     required this.hintText,
     required this.onChanged,
     required this.onSend,
+    required this.onSendEmojiGame,
+    required this.onSendMedia,
     super.key,
   });
 
@@ -2899,6 +3885,8 @@ class _MessageInput extends StatefulWidget {
   final String hintText;
   final ValueChanged<String> onChanged;
   final ValueChanged<String>? onSend;
+  final ValueChanged<_EmojiGameSelection>? onSendEmojiGame;
+  final Future<bool> Function(_SelectedChatMedia media)? onSendMedia;
 
   @override
   State<_MessageInput> createState() => _MessageInputState();
@@ -2907,6 +3895,12 @@ class _MessageInput extends StatefulWidget {
 class _MessageInputState extends State<_MessageInput> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
+  OverlayEntry? _emojiOverlayEntry;
+  OverlayEntry? _attachOverlayEntry;
+  Timer? _emojiCloseTimer;
+  bool _emojiButtonHovered = false;
+  bool _emojiPanelHovered = false;
+  final Random _random = Random();
 
   @override
   void initState() {
@@ -2917,6 +3911,9 @@ class _MessageInputState extends State<_MessageInput> {
 
   @override
   void dispose() {
+    _hideEmojiPanel(notify: false);
+    _hideAttachmentMenu(notify: false);
+    _emojiCloseTimer?.cancel();
     _focusNode.dispose();
     _controller.dispose();
     super.dispose();
@@ -2934,6 +3931,313 @@ class _MessageInputState extends State<_MessageInput> {
     _focusNode.requestFocus();
   }
 
+  void _toggleEmojiPanel() {
+    if (_emojiOverlayEntry == null) {
+      _showEmojiPanel();
+      return;
+    }
+    _hideEmojiPanel();
+  }
+
+  void _handleEmojiButtonEnter(PointerEnterEvent _) {
+    _emojiButtonHovered = true;
+    _emojiCloseTimer?.cancel();
+    if (_emojiOverlayEntry == null) {
+      _showEmojiPanel();
+    }
+  }
+
+  void _handleEmojiButtonExit(PointerExitEvent _) {
+    _emojiButtonHovered = false;
+    _scheduleEmojiPanelClose();
+  }
+
+  void _handleEmojiPanelEnter(PointerEnterEvent _) {
+    _emojiPanelHovered = true;
+    _emojiCloseTimer?.cancel();
+  }
+
+  void _handleEmojiPanelExit(PointerExitEvent _) {
+    _emojiPanelHovered = false;
+    _scheduleEmojiPanelClose();
+  }
+
+  void _scheduleEmojiPanelClose() {
+    _emojiCloseTimer?.cancel();
+    _emojiCloseTimer = Timer(const Duration(milliseconds: 180), () {
+      if (!_emojiButtonHovered && !_emojiPanelHovered) {
+        _hideEmojiPanel();
+      }
+    });
+  }
+
+  void _showEmojiPanel() {
+    final overlay = Overlay.maybeOf(context);
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final overlayBox = overlay?.context.findRenderObject() as RenderBox?;
+    if (overlay == null || renderBox == null || overlayBox == null) {
+      return;
+    }
+    final inputTopLeft = renderBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayBox,
+    );
+    final overlaySize = overlayBox.size;
+    final panelHeight = (inputTopLeft.dy - 28).clamp(300.0, 520.0);
+    final availablePanelWidth = overlaySize.width - inputTopLeft.dx - 48;
+    final panelWidth = (availablePanelWidth * 0.7).clamp(320.0, 364.0);
+    final left = (inputTopLeft.dx + renderBox.size.width - panelWidth - 22)
+        .clamp(16.0, overlaySize.width - panelWidth - 16);
+    final top = inputTopLeft.dy - panelHeight - 8;
+
+    _emojiOverlayEntry = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          Positioned(
+            left: left,
+            top: top,
+            width: panelWidth,
+            height: panelHeight,
+            child: MouseRegion(
+              onEnter: _handleEmojiPanelEnter,
+              onExit: _handleEmojiPanelExit,
+              child: _EmojiPickerPanel(
+                recentTitle: AppLocalizations.of(context).emojiRecentTitle,
+                smileysTitle: AppLocalizations.of(context).emojiSmileysTitle,
+                onEmojiSelected: _insertEmoji,
+                onEmojiGameSelected: _sendEmojiGame,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    overlay.insert(_emojiOverlayEntry!);
+    setState(() {});
+  }
+
+  void _hideEmojiPanel({bool notify = true}) {
+    _emojiCloseTimer?.cancel();
+    _emojiOverlayEntry?.remove();
+    _emojiOverlayEntry = null;
+    if (notify && mounted) {
+      setState(() {});
+    }
+  }
+
+  void _insertEmoji(String emoji) {
+    final value = _controller.value;
+    final selection = value.selection;
+    final start = selection.isValid ? selection.start : value.text.length;
+    final end = selection.isValid ? selection.end : value.text.length;
+    final nextText = value.text.replaceRange(start, end, emoji);
+    final nextOffset = start + emoji.length;
+    _controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: nextOffset),
+    );
+    widget.onChanged(nextText);
+    setState(() {});
+    _focusNode.requestFocus();
+  }
+
+  void _sendEmojiGame(String type) {
+    if (widget.onSendEmojiGame == null) {
+      return;
+    }
+    final value = type == _EmojiGameSelection.diceType
+        ? 1 + _random.nextInt(6)
+        : _random.nextInt(3);
+    widget.onSendEmojiGame!(_EmojiGameSelection(type: type, value: value));
+    _hideEmojiPanel();
+    _focusNode.requestFocus();
+  }
+
+  void _toggleAttachmentMenu() {
+    if (_attachOverlayEntry == null) {
+      _showAttachmentMenu();
+      return;
+    }
+    _hideAttachmentMenu();
+  }
+
+  void _showAttachmentMenu() {
+    _hideEmojiPanel();
+    final overlay = Overlay.maybeOf(context);
+    final renderBox = context.findRenderObject() as RenderBox?;
+    final overlayBox = overlay?.context.findRenderObject() as RenderBox?;
+    if (overlay == null || renderBox == null || overlayBox == null) {
+      return;
+    }
+    final inputTopLeft = renderBox.localToGlobal(
+      Offset.zero,
+      ancestor: overlayBox,
+    );
+    final left = (inputTopLeft.dx + 14).clamp(
+      16.0,
+      overlayBox.size.width - 236,
+    );
+    final top = inputTopLeft.dy - 190;
+
+    _attachOverlayEntry = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _hideAttachmentMenu,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(
+            left: left,
+            top: top,
+            width: 220,
+            child: _AttachmentMenu(
+              onPhotoOrVideo: _pickPhotoOrVideo,
+              onSelect: _hideAttachmentMenu,
+            ),
+          ),
+        ],
+      ),
+    );
+    overlay.insert(_attachOverlayEntry!);
+    setState(() {});
+  }
+
+  void _hideAttachmentMenu({bool notify = true}) {
+    _attachOverlayEntry?.remove();
+    _attachOverlayEntry = null;
+    if (notify && mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _pickPhotoOrVideo() async {
+    _hideAttachmentMenu();
+    final l10n = AppLocalizations.of(context);
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Photo Or Video',
+      initialDirectory: _downloadsDirectoryPath(),
+      type: FileType.custom,
+      allowedExtensions: [..._chatImageExtensions, ..._chatVideoExtensions],
+      allowMultiple: false,
+      withData: false,
+      withReadStream: false,
+      lockParentWindow: true,
+    );
+    final pickedFile = result == null || result.files.isEmpty
+        ? null
+        : result.files.first;
+    if (pickedFile == null) {
+      return;
+    }
+    final path = pickedFile.path;
+    if (path == null || path.trim().isEmpty) {
+      return;
+    }
+    final extension = _fileExtension(path);
+    final isVideo = _chatVideoExtensions.contains(extension);
+    final isImage = _chatImageExtensions.contains(extension);
+    if (!isVideo && !isImage) {
+      _showInputNotice(l10n.mediaUnsupportedFile);
+      return;
+    }
+    if (isVideo) {
+      final fileSize = await File(path).length();
+      if (fileSize > _maxChatVideoBytes) {
+        _showInputNotice(l10n.mediaVideoSizeLimit('50'));
+        return;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    await _showMediaPreviewDialog(
+      path: path,
+      fileName: pickedFile.name,
+      isVideo: isVideo,
+      fileSizeBytes: await File(path).length(),
+    );
+  }
+
+  Future<void> _showMediaPreviewDialog({
+    required String path,
+    required String fileName,
+    required bool isVideo,
+    required int fileSizeBytes,
+  }) {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _MediaPreviewDialog(
+        path: path,
+        fileName: fileName,
+        isVideo: isVideo,
+        fileSizeBytes: fileSizeBytes,
+        onSend: widget.onSendMedia == null
+            ? null
+            : () => widget.onSendMedia!(
+                _SelectedChatMedia(
+                  path: path,
+                  fileName: fileName,
+                  isVideo: isVideo,
+                  fileSizeBytes: fileSizeBytes,
+                ),
+              ),
+        onSendSucceeded: () {
+          if (mounted) {
+            Navigator.of(context).pop();
+          }
+        },
+      ),
+    );
+  }
+
+  String? _downloadsDirectoryPath() {
+    final home = Platform.environment['HOME']?.trim();
+    if (home != null && home.isNotEmpty) {
+      final downloads = Directory('$home/Downloads');
+      if (downloads.existsSync()) {
+        return downloads.path;
+      }
+      return home;
+    }
+    final userProfile = Platform.environment['USERPROFILE']?.trim();
+    if (userProfile != null && userProfile.isNotEmpty) {
+      final downloads = Directory('$userProfile\\Downloads');
+      if (downloads.existsSync()) {
+        return downloads.path;
+      }
+      return userProfile;
+    }
+    return null;
+  }
+
+  String _fileExtension(String path) {
+    final filename = path.split(Platform.pathSeparator).last;
+    final dotIndex = filename.lastIndexOf('.');
+    if (dotIndex < 0 || dotIndex == filename.length - 1) {
+      return '';
+    }
+    return filename.substring(dotIndex + 1).toLowerCase();
+  }
+
+  void _showInputNotice(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -2942,14 +4246,23 @@ class _MessageInputState extends State<_MessageInput> {
       padding: const EdgeInsets.fromLTRB(23, 16, 22, 16),
       child: Row(
         children: [
-          const Icon(
-            Icons.emoji_emotions_outlined,
-            color: Color(0xff54656f),
-            size: 26,
+          IconButton(
+            tooltip: 'More',
+            onPressed: _toggleAttachmentMenu,
+            icon: AnimatedRotation(
+              turns: _attachOverlayEntry == null ? 0 : 0.125,
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              child: Icon(
+                Icons.add_rounded,
+                color: _attachOverlayEntry == null
+                    ? const Color(0xff253443)
+                    : const Color(0xff1da855),
+                size: 25,
+              ),
+            ),
           ),
-          const SizedBox(width: 24),
-          const Icon(Icons.add_rounded, color: Color(0xff253443), size: 25),
-          const SizedBox(width: 24),
+          const SizedBox(width: 12),
           Expanded(
             child: Container(
               height: 48,
@@ -3008,7 +4321,23 @@ class _MessageInputState extends State<_MessageInput> {
               ),
             ),
           ),
-          const SizedBox(width: 24),
+          const SizedBox(width: 16),
+          MouseRegion(
+            onEnter: _handleEmojiButtonEnter,
+            onExit: _handleEmojiButtonExit,
+            child: IconButton(
+              tooltip: 'Emoji',
+              onPressed: _toggleEmojiPanel,
+              icon: Icon(
+                Icons.emoji_emotions_outlined,
+                color: _emojiOverlayEntry == null
+                    ? const Color(0xff54656f)
+                    : const Color(0xff1da855),
+                size: 26,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           IconButton(
             tooltip: widget.hintText,
             onPressed: widget.onSend == null ? null : _send,
@@ -3028,6 +4357,734 @@ class _MessageInputState extends State<_MessageInput> {
 
 class _SendMessageIntent extends Intent {
   const _SendMessageIntent();
+}
+
+class _MediaPreviewDialog extends StatefulWidget {
+  const _MediaPreviewDialog({
+    required this.path,
+    required this.fileName,
+    required this.isVideo,
+    required this.fileSizeBytes,
+    required this.onSend,
+    required this.onSendSucceeded,
+  });
+
+  final String path;
+  final String fileName;
+  final bool isVideo;
+  final int fileSizeBytes;
+  final Future<bool> Function()? onSend;
+  final VoidCallback onSendSucceeded;
+
+  @override
+  State<_MediaPreviewDialog> createState() => _MediaPreviewDialogState();
+}
+
+class _MediaPreviewDialogState extends State<_MediaPreviewDialog> {
+  bool _sending = false;
+
+  Future<void> _send() async {
+    final onSend = widget.onSend;
+    if (onSend == null || _sending) {
+      return;
+    }
+    setState(() => _sending = true);
+    final success = await onSend();
+    if (!mounted) {
+      return;
+    }
+    if (success) {
+      widget.onSendSucceeded();
+      return;
+    }
+    setState(() => _sending = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final screenSize = MediaQuery.sizeOf(context);
+    final dialogWidth = min(screenSize.width * 0.72, 560.0);
+    final dialogHeight = min(screenSize.height * 0.82, 720.0);
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: dialogWidth,
+        height: dialogHeight,
+        child: Column(
+          children: [
+            SizedBox(
+              height: 70,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 16),
+                      child: IconButton(
+                        tooltip: l10n.close,
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Color(0xff1976d2),
+                          size: 30,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    l10n.mediaPreviewTitle,
+                    style: const TextStyle(
+                      color: Color(0xff111b21),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      height: 24 / 20,
+                    ),
+                  ),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: EdgeInsets.only(right: 22),
+                      child: Icon(
+                        Icons.more_horiz_rounded,
+                        color: Color(0xff1976d2),
+                        size: 30,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(40, 8, 40, 24),
+                child: _MediaPreviewBody(
+                  path: widget.path,
+                  fileName: widget.fileName,
+                  isVideo: widget.isVideo,
+                  fileSizeBytes: widget.fileSizeBytes,
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xffe5e7eb)),
+            Container(
+              height: 76,
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
+              color: Colors.white,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: widget.onSend == null || _sending ? null : _send,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xff1976d2),
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: const Color(0xff9ec5ee),
+                    disabledForegroundColor: Colors.white,
+                    minimumSize: const Size(118, 46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.4,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send_rounded, size: 22),
+                  label: Text(_sending ? l10n.mediaSending : l10n.mediaSend),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MediaPreviewBody extends StatelessWidget {
+  const _MediaPreviewBody({
+    required this.path,
+    required this.fileName,
+    required this.isVideo,
+    required this.fileSizeBytes,
+  });
+
+  final String path;
+  final String fileName;
+  final bool isVideo;
+  final int fileSizeBytes;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isVideo) {
+      return _VideoPreviewCard(
+        path: path,
+        fileName: fileName,
+        fileSizeBytes: fileSizeBytes,
+      );
+    }
+
+    return Center(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.file(
+          File(path),
+          fit: BoxFit.contain,
+          errorBuilder: (_, _, _) => _BrokenMediaPreview(fileName: fileName),
+        ),
+      ),
+    );
+  }
+}
+
+class _VideoPreviewCard extends StatefulWidget {
+  const _VideoPreviewCard({
+    required this.path,
+    required this.fileName,
+    required this.fileSizeBytes,
+  });
+
+  final String path;
+  final String fileName;
+  final int fileSizeBytes;
+
+  @override
+  State<_VideoPreviewCard> createState() => _VideoPreviewCardState();
+}
+
+class _VideoPreviewCardState extends State<_VideoPreviewCard> {
+  String _posterPath = '';
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadPoster());
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoPreviewCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      setState(() => _posterPath = '');
+      unawaited(_loadPoster());
+    }
+  }
+
+  Future<void> _loadPoster() async {
+    final poster = await _createVideoCover(widget.path);
+    if (mounted && poster != null && poster.trim().isNotEmpty) {
+      setState(() => _posterPath = poster);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxWidth: 460, maxHeight: 420),
+          color: const Color(0xff111b21),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _LoopingVideoPlayer(
+                source: widget.path,
+                posterSource: _posterPath,
+                muted: true,
+              ),
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: 12,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xff0b141a).withValues(alpha: 0.58),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.videocam_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            widget.fileName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _formatMediaFileSize(widget.fileSizeBytes),
+                          style: const TextStyle(
+                            color: Color(0xffd1d5db),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BrokenMediaPreview extends StatelessWidget {
+  const _BrokenMediaPreview({required this.fileName});
+
+  final String fileName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.broken_image_outlined, size: 56),
+          const SizedBox(height: 12),
+          Text(fileName, textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatMediaFileSize(int bytes) {
+  if (bytes >= 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+  if (bytes >= 1024) {
+    return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  }
+  return '$bytes B';
+}
+
+Future<_MediaDimensions?> _readImageDimensions(String path) async {
+  try {
+    final bytes = await File(path).readAsBytes();
+    final codec = await ui.instantiateImageCodec(bytes);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final dimensions = _MediaDimensions(
+      width: image.width,
+      height: image.height,
+    );
+    image.dispose();
+    return dimensions;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<String?> _createVideoCover(String videoPath) async {
+  if (!Platform.isMacOS) {
+    return null;
+  }
+  final outputDir = await Directory.systemTemp.createTemp('bbp_video_cover_');
+  final result = await Process.run('qlmanage', [
+    '-t',
+    '-s',
+    '720',
+    '-o',
+    outputDir.path,
+    videoPath,
+  ]);
+  if (result.exitCode != 0) {
+    return null;
+  }
+  final basename = videoPath.split(Platform.pathSeparator).last;
+  final candidates = [
+    File('${outputDir.path}/$basename.png'),
+    File('${outputDir.path}/$basename.jpg'),
+    File('${outputDir.path}/$basename.jpeg'),
+  ];
+  for (final candidate in candidates) {
+    if (await candidate.exists()) {
+      return candidate.path;
+    }
+  }
+  final generated = await outputDir
+      .list()
+      .where((entity) => entity is File)
+      .cast<File>()
+      .toList();
+  return generated.isEmpty ? null : generated.first.path;
+}
+
+class _AttachmentMenu extends StatelessWidget {
+  const _AttachmentMenu({required this.onPhotoOrVideo, required this.onSelect});
+
+  final VoidCallback onPhotoOrVideo;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      elevation: 14,
+      shadowColor: const Color(0xff0b141a).withValues(alpha: 0.2),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _AttachmentMenuItem(
+              icon: Icons.image_outlined,
+              color: Color(0xff7c4dff),
+              label: 'Photo Or Video',
+              onTap: onPhotoOrVideo,
+            ),
+            _AttachmentMenuItem(
+              icon: Icons.insert_drive_file_outlined,
+              color: Color(0xff1e88e5),
+              label: 'Document',
+              onTap: onSelect,
+            ),
+            _AttachmentMenuItem(
+              icon: Icons.person_outline_rounded,
+              color: Color(0xff00a884),
+              label: 'Contact',
+              onTap: onSelect,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AttachmentMenuItem extends StatelessWidget {
+  const _AttachmentMenuItem({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xff111b21),
+                fontSize: 14,
+                height: 20 / 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmojiPickerPanel extends StatefulWidget {
+  const _EmojiPickerPanel({
+    required this.recentTitle,
+    required this.smileysTitle,
+    required this.onEmojiSelected,
+    required this.onEmojiGameSelected,
+  });
+
+  final String recentTitle;
+  final String smileysTitle;
+  final ValueChanged<String> onEmojiSelected;
+  final ValueChanged<String> onEmojiGameSelected;
+
+  @override
+  State<_EmojiPickerPanel> createState() => _EmojiPickerPanelState();
+}
+
+class _EmojiPickerPanelState extends State<_EmojiPickerPanel> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final recentEmojis = _desktopChatEmojis.take(2).toList(growable: false);
+    return Material(
+      elevation: 16,
+      shadowColor: const Color(0xff0b141a).withValues(alpha: 0.2),
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: RawScrollbar(
+        controller: _scrollController,
+        thumbVisibility: true,
+        interactive: true,
+        radius: const Radius.circular(6),
+        thickness: 8,
+        thumbColor: const Color(0xffb6bcc1),
+        child: CustomScrollView(
+          controller: _scrollController,
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 4),
+              sliver: SliverToBoxAdapter(
+                child: _EmojiSectionTitle(widget.recentTitle),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 16),
+              sliver: SliverGrid.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 8,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                ),
+                itemCount: recentEmojis.length,
+                itemBuilder: (context, index) {
+                  final emoji = recentEmojis[index];
+                  return _EmojiPickerTile(
+                    tooltip: emoji,
+                    child: Text(emoji, style: const TextStyle(fontSize: 30)),
+                    onTap: () => widget.onEmojiSelected(emoji),
+                  );
+                },
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 4),
+              sliver: SliverToBoxAdapter(
+                child: _EmojiSectionTitle(widget.smileysTitle),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 18),
+              sliver: SliverGrid.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 8,
+                  mainAxisSpacing: 10,
+                  crossAxisSpacing: 10,
+                ),
+                itemCount: _desktopChatEmojis.length + 2,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return _EmojiPickerTile(
+                      tooltip: 'Dice',
+                      child: Image.asset(
+                        'assets/chat_emoji_games/chat_dice.gif',
+                        width: 32,
+                        height: 32,
+                      ),
+                      onTap: () => widget.onEmojiGameSelected(
+                        _EmojiGameSelection.diceType,
+                      ),
+                    );
+                  }
+                  if (index == 1) {
+                    return _EmojiPickerTile(
+                      tooltip: 'Rock-Paper-Scissors',
+                      child: const _RpsEmojiPreview(),
+                      onTap: () => widget.onEmojiGameSelected(
+                        _EmojiGameSelection.rpsType,
+                      ),
+                    );
+                  }
+                  final emoji = _desktopChatEmojis[index - 2];
+                  return _EmojiPickerTile(
+                    tooltip: emoji,
+                    child: Text(emoji, style: const TextStyle(fontSize: 30)),
+                    onTap: () => widget.onEmojiSelected(emoji),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmojiSectionTitle extends StatelessWidget {
+  const _EmojiSectionTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xff667781),
+        fontSize: 18,
+        height: 25 / 18,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _EmojiPickerTile extends StatelessWidget {
+  const _EmojiPickerTile({
+    required this.tooltip,
+    required this.child,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final Widget child;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          hoverColor: const Color(0xffeef1f3),
+          splashColor: const Color(0xffdfe5e8),
+          onTap: onTap,
+          child: Center(child: child),
+        ),
+      ),
+    );
+  }
+}
+
+class _RpsEmojiPreview extends StatelessWidget {
+  const _RpsEmojiPreview();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 34,
+      height: 30,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            left: 0,
+            child: Image.asset(
+              'assets/chat_emoji_games/chat_ic_game_rock.webp',
+              width: 20,
+              height: 20,
+            ),
+          ),
+          Image.asset(
+            'assets/chat_emoji_games/chat_ic_game_scissors.webp',
+            width: 20,
+            height: 20,
+          ),
+          Positioned(
+            right: 0,
+            child: Image.asset(
+              'assets/chat_emoji_games/chat_ic_game_paper.webp',
+              width: 20,
+              height: 20,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmojiGameSelection {
+  const _EmojiGameSelection({required this.type, required this.value});
+
+  static const diceType = 'dice';
+  static const rpsType = 'rps';
+
+  final String type;
+  final int value;
+
+  String get previewText {
+    if (type == diceType) {
+      return '🎲 $value';
+    }
+    return switch (value) {
+      0 => '✊',
+      1 => '✌',
+      2 => '✋',
+      _ => '✊',
+    };
+  }
+
+  static String previewFromPayload(Map<String, dynamic>? payload) {
+    if (payload == null) {
+      return '';
+    }
+    final type = payload['type']?.toString();
+    if (type != diceType && type != rpsType) {
+      return '';
+    }
+    final value = _nullableInt(payload['value']) ?? 0;
+    return _EmojiGameSelection(type: type!, value: value).previewText;
+  }
+
+  static int? _nullableInt(Object? value) {
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse(value?.toString() ?? '');
+  }
 }
 
 class _BubbleTailPainter extends CustomPainter {
@@ -3101,6 +5158,9 @@ class _Conversation {
     this.roomId,
     this.pinned = false,
     this.delivered = false,
+    this.deliveredRead = false,
+    this.readReceiptEnabled = true,
+    this.isOnline = false,
     this.unread = 0,
   });
 
@@ -3115,26 +5175,36 @@ class _Conversation {
   final int? roomId;
   final bool pinned;
   final bool delivered;
+  final bool deliveredRead;
+  final bool readReceiptEnabled;
+  final bool isOnline;
   final int unread;
 
   _Conversation copyWith({
+    String? name,
     String? message,
     String? time,
+    String? avatarUrl,
     bool? delivered,
+    bool? deliveredRead,
+    bool? isOnline,
     int? unread,
   }) {
     return _Conversation(
-      name: name,
+      name: name ?? this.name,
       message: message ?? this.message,
       time: time ?? this.time,
       color: color,
       emoji: emoji,
       messages: messages,
-      avatarUrl: avatarUrl,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       targetUserId: targetUserId,
       roomId: roomId,
       pinned: pinned,
       delivered: delivered ?? this.delivered,
+      deliveredRead: deliveredRead ?? this.deliveredRead,
+      readReceiptEnabled: readReceiptEnabled,
+      isOnline: isOnline ?? this.isOnline,
       unread: unread ?? this.unread,
     );
   }
@@ -3154,20 +5224,22 @@ class _ConversationData {
         : displayName.characters.first.toUpperCase();
     return _Conversation(
       name: displayName,
-      message: '',
-      time: user.isOnline
+      message: user.isOnline
           ? l10n.workspaceUserOnline
-          : _formatRecommendedTime(user.lastLoginTime),
+          : l10n.appAccountStatusOffline,
+      time: user.isOnline ? '' : _formatRecommendedTime(user.lastLoginTime),
       color: avatarColorFor(user.id),
       emoji: initial,
       avatarUrl: user.avatarUrl,
       targetUserId: user.id,
       roomId: null,
+      isOnline: user.isOnline,
       messages: const [],
     );
   }
 
   static _Conversation fromChatConversation(
+    AppLocalizations l10n,
     ChatConversationSummary conversation,
   ) {
     final displayName = conversation.displayName;
@@ -3176,7 +5248,9 @@ class _ConversationData {
         : displayName.characters.first.toUpperCase();
     return _Conversation(
       name: displayName,
-      message: '',
+      message: conversation.isOnline
+          ? l10n.workspaceUserOnline
+          : l10n.appAccountStatusOffline,
       time: '',
       color: avatarColorFor(conversation.peerUserId),
       emoji: initial,
@@ -3184,6 +5258,8 @@ class _ConversationData {
       targetUserId: conversation.peerUserId,
       roomId: conversation.roomId,
       pinned: conversation.topStatus == 1,
+      readReceiptEnabled: conversation.readReceipt != 0,
+      isOnline: conversation.isOnline,
       messages: const [],
     );
   }
@@ -3221,6 +5297,7 @@ class _ChatMessage {
     required this.time,
     this.width = 342,
     this.singleLine = false,
+    this.media,
   }) : outgoing = false,
        sendStatus = ChatMessageSendStatus.sent;
 
@@ -3229,25 +5306,31 @@ class _ChatMessage {
     required this.time,
     this.width = 203,
     this.sendStatus = ChatMessageSendStatus.sent,
+    this.media,
   }) : outgoing = true,
        singleLine = true;
 
   factory _ChatMessage.fromLocal(LocalChatMessage message) {
     final hour = message.createdAt.hour.toString().padLeft(2, '0');
     final minute = message.createdAt.minute.toString().padLeft(2, '0');
+    final media = _ChatMedia.fromLocal(message);
     if (message.direction == ChatMessageDirection.incoming) {
       return _ChatMessage.incoming(
         text: message.text,
         time: '$hour:$minute',
-        width: _bubbleWidthFor(message.text),
+        width: media == null
+            ? _bubbleWidthFor(message.text)
+            : media.bubbleWidth,
         singleLine: message.text.characters.length < 24,
+        media: media,
       );
     }
     return _ChatMessage.outgoing(
       text: message.text,
       time: '$hour:$minute',
-      width: _bubbleWidthFor(message.text),
+      width: media == null ? _bubbleWidthFor(message.text) : media.bubbleWidth,
       sendStatus: message.sendStatus,
+      media: media,
     );
   }
 
@@ -3257,11 +5340,147 @@ class _ChatMessage {
   final bool outgoing;
   final bool singleLine;
   final ChatMessageSendStatus sendStatus;
+  final _ChatMedia? media;
 
   static double _bubbleWidthFor(String text) {
     final estimated = 72 + text.characters.length * 7.2;
     return estimated.clamp(136, 342).toDouble();
   }
+}
+
+class _ChatMedia {
+  const _ChatMedia({
+    required this.mediaType,
+    this.mediaUrl,
+    this.mediaCoverUrl,
+    this.localPath,
+    this.width,
+    this.height,
+  });
+
+  final int mediaType;
+  final String? mediaUrl;
+  final String? mediaCoverUrl;
+  final String? localPath;
+  final int? width;
+  final int? height;
+
+  bool get isVideo => mediaType == 3;
+
+  Size get previewSize {
+    final mediaWidth = width ?? 0;
+    final mediaHeight = height ?? 0;
+    if (mediaWidth <= 0 || mediaHeight <= 0) {
+      return Size(_mediaBubbleMaxWidth - 8, isVideo ? 150 : 190);
+    }
+    final aspect = mediaWidth / mediaHeight;
+    var displayWidth = _mediaBubbleMaxWidth - 8;
+    var displayHeight = displayWidth / aspect;
+    if (displayHeight > _mediaBubbleMaxHeight) {
+      displayHeight = _mediaBubbleMaxHeight;
+      displayWidth = displayHeight * aspect;
+    }
+    displayWidth = displayWidth.clamp(
+      _mediaBubbleMinWidth,
+      _mediaBubbleMaxWidth - 8,
+    );
+    displayHeight = displayHeight.clamp(
+      _mediaBubbleMinHeight,
+      _mediaBubbleMaxHeight,
+    );
+    return Size(displayWidth.toDouble(), displayHeight.toDouble());
+  }
+
+  double get bubbleWidth => previewSize.width + 8;
+
+  String get viewerSource {
+    if (isVideo) {
+      final media = mediaUrl?.trim() ?? '';
+      if (media.isNotEmpty) {
+        return media;
+      }
+      final local = localPath?.trim() ?? '';
+      if (local.isNotEmpty && File(local).existsSync()) {
+        return local;
+      }
+    }
+    final media = mediaUrl?.trim() ?? '';
+    if (media.isNotEmpty && !isVideo) {
+      return media;
+    }
+    return previewSource;
+  }
+
+  String get previewSource {
+    final local = localPath?.trim() ?? '';
+    if (local.isNotEmpty && File(local).existsSync()) {
+      return local;
+    }
+    final cover = mediaCoverUrl?.trim() ?? '';
+    if (cover.isNotEmpty) {
+      return cover;
+    }
+    final media = mediaUrl?.trim() ?? '';
+    if (media.isNotEmpty && !isVideo) {
+      return media;
+    }
+    return '';
+  }
+
+  static _ChatMedia? fromLocal(LocalChatMessage message) {
+    if (message.sendType != 2) {
+      return null;
+    }
+    final payload = _mediaPayloadFromJson(message.msgData);
+    final mediaType = _chatMediaInt(payload?['mediaType']) ?? 0;
+    if (mediaType != 2 && mediaType != 3) {
+      return null;
+    }
+    return _ChatMedia(
+      mediaType: mediaType,
+      mediaUrl: payload?['media']?.toString(),
+      mediaCoverUrl: payload?['mediaCover']?.toString(),
+      width: _chatMediaInt(payload?['width']),
+      height: _chatMediaInt(payload?['height']),
+      localPath: message.localMediaPath?.trim().isNotEmpty == true
+          ? message.localMediaPath
+          : payload?['localUrl']?.toString(),
+    );
+  }
+}
+
+int? _chatMediaInt(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  return int.tryParse(value?.toString() ?? '');
+}
+
+Map<String, dynamic>? _mediaPayloadFromJson(String? rawValue) {
+  final raw = rawValue?.trim() ?? '';
+  if (raw.isEmpty) {
+    return null;
+  }
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    if (decoded is Map) {
+      return decoded.map((key, value) => MapEntry(key.toString(), value));
+    }
+    if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
+      return (decoded.first as Map).map(
+        (key, value) => MapEntry(key.toString(), value),
+      );
+    }
+  } catch (_) {
+    return null;
+  }
+  return null;
 }
 
 class _IncomingSocketMessage {
@@ -3273,6 +5492,7 @@ class _IncomingSocketMessage {
     this.clientMessageId,
     this.id,
     this.sendTime,
+    this.msgDataJson,
   });
 
   final int? id;
@@ -3282,6 +5502,7 @@ class _IncomingSocketMessage {
   final String previewText;
   final String? clientMessageId;
   final int? sendTime;
+  final String? msgDataJson;
 
   bool get canDisplay => userId > 0 && previewText.trim().isNotEmpty;
 
@@ -3301,6 +5522,7 @@ class _IncomingSocketMessage {
       json['content'],
     ]);
     final payload = _parseMsgData(rawMsgData);
+    final sendType = _toInt(json['sendType'] ?? json['msgType']);
     final userPayload = _firstMap([
       json['user'],
       json['sendUser'],
@@ -3320,7 +5542,10 @@ class _IncomingSocketMessage {
             payload['message'],
             payload['title'],
           ]);
-    final sendType = _toInt(json['sendType'] ?? json['msgType']);
+    final emojiGameText = sendType == _emojiGameSendType
+        ? _EmojiGameSelection.previewFromPayload(payload)
+        : '';
+    final mediaText = sendType == 2 ? _mediaPreviewText(payload) : '';
     return _IncomingSocketMessage(
       id: _nullableInt(json['id']),
       userId: _firstPositiveInt([
@@ -3356,11 +5581,32 @@ class _IncomingSocketMessage {
       ),
       previewText: directText.isNotEmpty
           ? directText
-          : (payloadText.isNotEmpty ? payloadText : _fallbackText(sendType)),
+          : (payloadText.isNotEmpty
+                ? payloadText
+                : (emojiGameText.isNotEmpty
+                      ? emojiGameText
+                      : (mediaText.isNotEmpty
+                            ? mediaText
+                            : _fallbackText(sendType)))),
       sendTime: _nullableInt(
         json['sendTime'] ?? json['createTime'] ?? json['timestamp'],
       ),
+      msgDataJson: _normalizeMsgData(rawMsgData),
     );
+  }
+
+  static String? _normalizeMsgData(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is String) {
+      return value.trim().isEmpty ? null : value;
+    }
+    try {
+      return jsonEncode(value);
+    } catch (_) {
+      return value.toString();
+    }
   }
 
   static Map<String, dynamic>? _parseMsgData(Object? value) {
@@ -3412,6 +5658,16 @@ class _IncomingSocketMessage {
       2 => '[Media]',
       6 => '[Message recalled]',
       43 => '[Gift]',
+      _emojiGameSendType => '[Emoji]',
+      _ => '',
+    };
+  }
+
+  static String _mediaPreviewText(Map<String, dynamic>? payload) {
+    final mediaType = _toInt(payload?['mediaType']);
+    return switch (mediaType) {
+      2 => '[Photo]',
+      3 => '[Video]',
       _ => '',
     };
   }

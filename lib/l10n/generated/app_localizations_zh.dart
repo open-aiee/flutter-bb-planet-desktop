@@ -186,6 +186,43 @@ class AppLocalizationsZh extends AppLocalizations {
   String get messageReadMore => '閱讀更多';
 
   @override
+  String get emojiRecentTitle => '最近使用';
+
+  @override
+  String get emojiSmileysTitle => '表情符號與人物';
+
+  @override
+  String get mediaUnsupportedFile => '請選擇一張圖片或一個影片。';
+
+  @override
+  String mediaVideoSizeLimit(String sizeMb) {
+    return '影片大小不能超過 $sizeMb MB。';
+  }
+
+  @override
+  String mediaSelected(String fileName) {
+    return '已選擇：$fileName';
+  }
+
+  @override
+  String get mediaPreviewTitle => '1 個媒體';
+
+  @override
+  String get mediaCaptionHint => '添加說明...';
+
+  @override
+  String get mediaVideoLabel => '影片';
+
+  @override
+  String get mediaSend => '發送';
+
+  @override
+  String get mediaSending => '發送中...';
+
+  @override
+  String get mediaSendPending => '媒體發送暫未接入。';
+
+  @override
   String get workspaceUserOnline => '在線';
 
   @override
@@ -420,6 +457,43 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get messageReadMore => '閱讀更多';
+
+  @override
+  String get emojiRecentTitle => '最近使用';
+
+  @override
+  String get emojiSmileysTitle => '表情符號與人物';
+
+  @override
+  String get mediaUnsupportedFile => '請選擇一張圖片或一個影片。';
+
+  @override
+  String mediaVideoSizeLimit(String sizeMb) {
+    return '影片大小不能超過 $sizeMb MB。';
+  }
+
+  @override
+  String mediaSelected(String fileName) {
+    return '已選擇：$fileName';
+  }
+
+  @override
+  String get mediaPreviewTitle => '1 個媒體';
+
+  @override
+  String get mediaCaptionHint => '添加說明...';
+
+  @override
+  String get mediaVideoLabel => '影片';
+
+  @override
+  String get mediaSend => '發送';
+
+  @override
+  String get mediaSending => '發送中...';
+
+  @override
+  String get mediaSendPending => '媒體發送暫未接入。';
 
   @override
   String get workspaceUserOnline => '在線';
