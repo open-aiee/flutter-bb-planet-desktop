@@ -6530,13 +6530,16 @@ class _ChatMedia {
     if (mediaType != 2 && mediaType != 3 && mediaType != 4) {
       return null;
     }
+    final duration = _chatMediaInt(payload?['duration']);
     return _ChatMedia(
       mediaType: mediaType,
       mediaUrl: payload?['media']?.toString(),
       mediaCoverUrl: payload?['mediaCover']?.toString(),
       width: _chatMediaInt(payload?['width']),
       height: _chatMediaInt(payload?['height']),
-      durationSeconds: _chatMediaInt(payload?['duration']),
+      durationSeconds: mediaType == 4
+          ? _normalizeVoiceDurationSeconds(duration)
+          : duration,
       localPath: message.localMediaPath?.trim().isNotEmpty == true
           ? message.localMediaPath
           : payload?['localUrl']?.toString(),
@@ -6559,6 +6562,18 @@ String _formatVoiceDuration(int seconds) {
   final minutes = safeSeconds ~/ 60;
   final remainingSeconds = safeSeconds % 60;
   return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
+}
+
+int? _normalizeVoiceDurationSeconds(int? rawDuration) {
+  if (rawDuration == null || rawDuration <= 0) {
+    return null;
+  }
+  // Desktop writes seconds. Android/iOS currently provide milliseconds for
+  // voice msgData.duration, which otherwise renders as huge minute values.
+  if (rawDuration > _maxVoiceRecordSeconds) {
+    return max(1, rawDuration ~/ 1000);
+  }
+  return rawDuration;
 }
 
 Map<String, dynamic>? _mediaPayloadFromJson(String? rawValue) {
