@@ -177,6 +177,7 @@ class _HomeScreenMainWindow extends ConsumerStatefulWidget {
 class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   _RailTab _selectedTab = _RailTab.chats;
   int _selectedConversationIndex = 0;
+  int? _selectedConversationPeerUserId;
   bool _isConversationLoading = false;
   bool _isSearchLoading = false;
   bool _didShowAccountHistory = false;
@@ -264,10 +265,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           ? _searchConversations
           : _conversationsForTab(l10n, _selectedTab),
     );
-    final safeSelectedIndex = conversations.isEmpty
-        ? 0
-        : _selectedConversationIndex.clamp(0, conversations.length - 1);
-    final selectedConversation = conversations.isEmpty
+    final safeSelectedIndex = _selectedIndexFor(conversations);
+    final selectedConversation =
+        conversations.isEmpty || _selectedConversationPeerUserId == null
         ? null
         : conversations[safeSelectedIndex];
     final storageKey = selectedConversation == null
@@ -289,7 +289,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             appAccountBusy: widget.appAccountBusy,
             appAccountAvatarUrl: widget.appAccountAvatarUrl,
             selectedTab: _selectedTab,
-            selectedConversationIndex: safeSelectedIndex,
+            selectedConversationIndex: selectedConversation == null
+                ? -1
+                : safeSelectedIndex,
             conversations: conversations,
             isConversationLoading: isSearching
                 ? _isSearchLoading
@@ -298,8 +300,13 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             searchQuery: _searchQuery,
             onTabSelected: _selectTab,
             onConversationSelected: (index) {
-              setState(() => _selectedConversationIndex = index);
-              _activateConversation(conversations[index]);
+              final safeIndex = index.clamp(0, conversations.length - 1);
+              final conversation = conversations[safeIndex];
+              setState(() {
+                _selectedConversationIndex = safeIndex;
+                _selectedConversationPeerUserId = conversation.targetUserId;
+              });
+              _activateConversation(conversation);
             },
             onSearchChanged: _onSearchChanged,
             onAppAccountTap: widget.onAppAccountTap,
@@ -353,6 +360,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     setState(() {
       _selectedTab = tab;
       _selectedConversationIndex = 0;
+      _selectedConversationPeerUserId = null;
     });
 
     if (tab == _RailTab.chats) {
@@ -409,9 +417,6 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           _remoteNotices[tab] = l10n.workspaceUsersEmpty;
         }
       });
-      if (conversations.isNotEmpty) {
-        _activateConversation(conversations.first);
-      }
     } catch (_) {
       if (!mounted || requestId != _loadRequestId) {
         return;
@@ -434,6 +439,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         _searchNotice = null;
         _isSearchLoading = false;
         _selectedConversationIndex = 0;
+        _selectedConversationPeerUserId = null;
       });
       return;
     }
@@ -443,6 +449,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _isSearchLoading = true;
       _searchNotice = null;
       _selectedConversationIndex = 0;
+      _selectedConversationPeerUserId = null;
     });
     _searchDebounce = Timer(
       const Duration(milliseconds: 300),
@@ -496,9 +503,6 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         _isSearchLoading = false;
         _searchNotice = conversations.isEmpty ? l10n.workspaceUsersEmpty : null;
       });
-      if (conversations.isNotEmpty) {
-        _activateConversation(conversations.first);
-      }
     } catch (_) {
       if (!mounted || requestId != _searchRequestId) {
         return;
@@ -792,13 +796,26 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     final conversations = _searchQuery.trim().isNotEmpty
         ? _searchConversations
         : _conversationsForTab(l10n, _selectedTab);
-    if (conversations.isEmpty) {
+    if (conversations.isEmpty || _selectedConversationPeerUserId == null) {
       return null;
     }
-    return conversations[_selectedConversationIndex.clamp(
-      0,
-      conversations.length - 1,
-    )];
+    return conversations[_selectedIndexFor(conversations)];
+  }
+
+  int _selectedIndexFor(List<_Conversation> conversations) {
+    if (conversations.isEmpty) {
+      return 0;
+    }
+    final selectedPeerUserId = _selectedConversationPeerUserId;
+    if (selectedPeerUserId != null && selectedPeerUserId > 0) {
+      final index = conversations.indexWhere(
+        (conversation) => conversation.targetUserId == selectedPeerUserId,
+      );
+      if (index >= 0) {
+        return index;
+      }
+    }
+    return _selectedConversationIndex.clamp(0, conversations.length - 1);
   }
 
   int? _roomIdFor(_Conversation conversation) {
@@ -1894,13 +1911,16 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         _chatNotice = conversations.isEmpty ? l10n.workspaceUsersEmpty : null;
         if (_selectedTab == _RailTab.chats) {
           _isConversationLoading = false;
-          _selectedConversationIndex = conversations.isEmpty
-              ? 0
-              : _selectedConversationIndex.clamp(0, conversations.length - 1);
+          _selectedConversationIndex = _selectedIndexFor(conversations);
+          if (_selectedConversationPeerUserId != null &&
+              !validPeerIds.contains(_selectedConversationPeerUserId)) {
+            _selectedConversationPeerUserId = null;
+          }
         }
       });
-      if (_selectedTab == _RailTab.chats && conversations.isNotEmpty) {
-        _activateConversation(conversations[_selectedConversationIndex]);
+      final selected = _selectedConversation();
+      if (_selectedTab == _RailTab.chats && selected != null) {
+        _activateConversation(selected);
       }
     } catch (_) {
       if (!mounted ||
@@ -2023,6 +2043,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     _activeConversationSyncTimer?.cancel();
     setState(() {
       _selectedConversationIndex = 0;
+      _selectedConversationPeerUserId = null;
       _isConversationLoading = false;
       _isSearchLoading = false;
       _isActiveConversationSyncing = false;
@@ -3192,7 +3213,11 @@ class _ChatSectionState extends State<_ChatSection> {
             right: 0,
             bottom: 0,
             child: _MessageInput(
-              key: ValueKey(conversation.name),
+              key: ValueKey(
+                conversation.targetUserId == null
+                    ? conversation.name
+                    : 'peer:${conversation.targetUserId}',
+              ),
               initialValue: widget.draft,
               hintText: widget.l10n.workspaceMessageInputHint,
               onChanged: widget.onDraftChanged,
@@ -6215,18 +6240,897 @@ class _BubbleTailPainter extends CustomPainter {
 class _ChatWallpaperPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = const Color(0xffe9eeee).withValues(alpha: 0.42);
+    final backgroundRect = Offset.zero & size;
+    canvas.drawRect(backgroundRect, Paint()..color = const Color(0xffbed79b));
+    canvas.drawRect(
+      backgroundRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xffc8dc9d), Color(0xffa8cfaa)],
+        ).createShader(backgroundRect),
+    );
 
-    for (var y = 110.0; y < size.height; y += 68) {
-      for (var x = 28.0; x < size.width; x += 86) {
-        final radius = 5 + ((x + y) % 4);
-        canvas.drawCircle(Offset(x, y), radius, paint);
-        canvas.drawLine(Offset(x + 20, y - 8), Offset(x + 34, y + 6), paint);
+    final linePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.7
+      ..strokeCap = StrokeCap.round
+      ..color = const Color(0xff8fa79c).withValues(alpha: 0.34);
+    final softLinePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25
+      ..strokeCap = StrokeCap.round
+      ..color = const Color(0xff7e9d72).withValues(alpha: 0.24);
+    const tileWidth = 82.0;
+    const tileHeight = 74.0;
+    for (var row = 0; row * tileHeight - 54 < size.height; row += 1) {
+      for (var col = 0; col * tileWidth - 56 < size.width; col += 1) {
+        final origin = Offset(
+          col * tileWidth + (row.isOdd ? 30 : -18),
+          row * tileHeight + 8,
+        );
+        _drawWallpaperDoodle(
+          canvas,
+          origin + const Offset(42, 42),
+          variant: (row * 7 + col * 11) % 35,
+          paint: linePaint,
+        );
+        _drawPatternDust(
+          canvas,
+          origin,
+          row: row,
+          col: col,
+          paint: softLinePaint,
+        );
       }
     }
+  }
+
+  void _drawBubble(Canvas canvas, Offset center, Paint paint) {
+    final rect = Rect.fromCenter(center: center, width: 30, height: 20);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(10)),
+      paint,
+    );
+    final tail = Path()
+      ..moveTo(center.dx - 8, center.dy + 10)
+      ..quadraticBezierTo(
+        center.dx - 2,
+        center.dy + 16,
+        center.dx + 4,
+        center.dy + 9,
+      );
+    canvas.drawPath(tail, paint);
+  }
+
+  void _drawLeaf(Canvas canvas, Offset center, Paint paint) {
+    final path = Path()
+      ..moveTo(center.dx - 13, center.dy + 2)
+      ..quadraticBezierTo(center.dx, center.dy - 18, center.dx + 14, center.dy)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy + 16,
+        center.dx - 13,
+        center.dy + 2,
+      );
+    canvas.drawPath(path, paint);
+    canvas.drawLine(
+      center + const Offset(-8, 2),
+      center + const Offset(10, 0),
+      paint,
+    );
+  }
+
+  void _drawStar(Canvas canvas, Offset center, Paint paint) {
+    canvas.drawLine(
+      center + const Offset(-9, 0),
+      center + const Offset(9, 0),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(0, -9),
+      center + const Offset(0, 9),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(-5, -5),
+      center + const Offset(5, 5),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(5, -5),
+      center + const Offset(-5, 5),
+      paint,
+    );
+  }
+
+  void _drawSpark(Canvas canvas, Offset center, Paint paint) {
+    canvas.drawLine(
+      center + const Offset(-7, 0),
+      center + const Offset(7, 0),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(0, -7),
+      center + const Offset(0, 7),
+      paint,
+    );
+  }
+
+  void _drawDoubleRing(Canvas canvas, Offset center, Paint paint) {
+    canvas.drawCircle(center, 9, paint);
+    canvas.drawCircle(center + const Offset(14, 2), 4, paint);
+  }
+
+  void _drawTinyHeart(Canvas canvas, Offset center, Paint paint) {
+    final path = Path()
+      ..moveTo(center.dx, center.dy + 8)
+      ..cubicTo(
+        center.dx - 16,
+        center.dy - 4,
+        center.dx - 6,
+        center.dy - 14,
+        center.dx,
+        center.dy - 6,
+      )
+      ..cubicTo(
+        center.dx + 6,
+        center.dy - 14,
+        center.dx + 16,
+        center.dy - 4,
+        center.dx,
+        center.dy + 8,
+      );
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawPatternDust(
+    Canvas canvas,
+    Offset origin, {
+    required int row,
+    required int col,
+    required Paint paint,
+  }) {
+    final seed = row * 31 + col * 17;
+    final first = origin + Offset(18 + (seed % 22), 18 + (seed % 13));
+    final second = origin + Offset(62 + (seed % 16), 50 + (seed % 19));
+    final third = origin + Offset(36 + (seed % 28), 8 + (seed % 46));
+    canvas.drawCircle(first, 1.9, paint);
+    canvas.drawCircle(second, 1.5, paint);
+    canvas.drawCircle(third, 1.3, paint);
+    if (seed.isEven) {
+      _drawSpark(canvas, origin + Offset(82, 18 + (seed % 18)), paint);
+    } else {
+      canvas.drawArc(
+        Rect.fromCenter(
+          center: origin + Offset(20 + (seed % 10), 66),
+          width: 14,
+          height: 14,
+        ),
+        0.2,
+        pi * 1.45,
+        false,
+        paint,
+      );
+    }
+    if (seed % 3 == 0) {
+      _drawTinyHeart(canvas, origin + Offset(64, 24 + (seed % 24)), paint);
+    }
+  }
+
+  void _drawChubbyCat(Canvas canvas, Offset center, Paint paint) {
+    final head = Path()
+      ..moveTo(center.dx - 22, center.dy - 4)
+      ..lineTo(center.dx - 16, center.dy - 22)
+      ..lineTo(center.dx - 4, center.dy - 12)
+      ..quadraticBezierTo(
+        center.dx,
+        center.dy - 16,
+        center.dx + 4,
+        center.dy - 12,
+      )
+      ..lineTo(center.dx + 16, center.dy - 22)
+      ..lineTo(center.dx + 22, center.dy - 4)
+      ..quadraticBezierTo(
+        center.dx + 24,
+        center.dy + 20,
+        center.dx,
+        center.dy + 22,
+      )
+      ..quadraticBezierTo(
+        center.dx - 24,
+        center.dy + 20,
+        center.dx - 22,
+        center.dy - 4,
+      )
+      ..close();
+    canvas.drawPath(head, paint);
+    canvas.drawCircle(center + const Offset(-8, 2), 2, paint);
+    canvas.drawCircle(center + const Offset(8, 2), 2, paint);
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: center + const Offset(0, 8),
+        width: 14,
+        height: 8,
+      ),
+      0.1,
+      pi - 0.2,
+      false,
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(-18, 8),
+      center + const Offset(-28, 5),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(18, 8),
+      center + const Offset(28, 5),
+      paint,
+    );
+  }
+
+  void _drawChubbyBird(Canvas canvas, Offset center, Paint paint) {
+    canvas.drawOval(
+      Rect.fromCenter(center: center, width: 48, height: 36),
+      paint,
+    );
+    canvas.drawCircle(center + const Offset(-8, -4), 2, paint);
+    final beak = Path()
+      ..moveTo(center.dx + 12, center.dy - 2)
+      ..lineTo(center.dx + 24, center.dy + 3)
+      ..lineTo(center.dx + 12, center.dy + 7)
+      ..close();
+    canvas.drawPath(beak, paint);
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: center + const Offset(-4, 6),
+        width: 18,
+        height: 14,
+      ),
+      0.2,
+      pi * 0.9,
+      false,
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(-10, 18),
+      center + const Offset(-16, 24),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(6, 18),
+      center + const Offset(10, 24),
+      paint,
+    );
+  }
+
+  void _drawRoundPenguin(Canvas canvas, Offset center, Paint paint) {
+    canvas.drawOval(
+      Rect.fromCenter(center: center, width: 38, height: 50),
+      paint,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: center + const Offset(0, 8),
+        width: 22,
+        height: 26,
+      ),
+      paint,
+    );
+    canvas.drawCircle(center + const Offset(-7, -10), 2, paint);
+    canvas.drawCircle(center + const Offset(7, -10), 2, paint);
+    final beak = Path()
+      ..moveTo(center.dx - 4, center.dy - 4)
+      ..lineTo(center.dx + 4, center.dy - 4)
+      ..lineTo(center.dx, center.dy + 2)
+      ..close();
+    canvas.drawPath(beak, paint);
+    canvas.drawLine(
+      center + const Offset(-18, 4),
+      center + const Offset(-28, 12),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(18, 4),
+      center + const Offset(28, 12),
+      paint,
+    );
+  }
+
+  void _drawTinyWhale(Canvas canvas, Offset center, Paint paint) {
+    final body = Path()
+      ..moveTo(center.dx - 28, center.dy + 4)
+      ..quadraticBezierTo(
+        center.dx - 14,
+        center.dy - 18,
+        center.dx + 14,
+        center.dy - 12,
+      )
+      ..quadraticBezierTo(
+        center.dx + 30,
+        center.dy - 8,
+        center.dx + 26,
+        center.dy + 8,
+      )
+      ..quadraticBezierTo(
+        center.dx + 2,
+        center.dy + 22,
+        center.dx - 28,
+        center.dy + 4,
+      )
+      ..close();
+    canvas.drawPath(body, paint);
+    canvas.drawCircle(center + const Offset(8, -4), 2, paint);
+    final tail = Path()
+      ..moveTo(center.dx - 28, center.dy + 4)
+      ..lineTo(center.dx - 42, center.dy - 8)
+      ..lineTo(center.dx - 38, center.dy + 8)
+      ..lineTo(center.dx - 48, center.dy + 18);
+    canvas.drawPath(tail, paint);
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: center + const Offset(-4, 4),
+        width: 16,
+        height: 12,
+      ),
+      0.1,
+      pi * 0.8,
+      false,
+      paint,
+    );
+  }
+
+  void _drawPaperPlane(Canvas canvas, Offset center, Paint paint) {
+    final path = Path()
+      ..moveTo(center.dx - 24, center.dy - 10)
+      ..lineTo(center.dx + 26, center.dy)
+      ..lineTo(center.dx - 18, center.dy + 18)
+      ..lineTo(center.dx - 8, center.dy + 2)
+      ..close();
+    canvas.drawPath(path, paint);
+    canvas.drawLine(
+      center + const Offset(-8, 2),
+      center + const Offset(26, 0),
+      paint,
+    );
+  }
+
+  void _drawBanana(Canvas canvas, Offset center, Paint paint) {
+    final outer = Path()
+      ..moveTo(center.dx - 28, center.dy - 8)
+      ..cubicTo(
+        center.dx - 8,
+        center.dy + 26,
+        center.dx + 26,
+        center.dy + 18,
+        center.dx + 32,
+        center.dy - 12,
+      );
+    final inner = Path()
+      ..moveTo(center.dx - 18, center.dy - 2)
+      ..cubicTo(
+        center.dx - 2,
+        center.dy + 12,
+        center.dx + 16,
+        center.dy + 8,
+        center.dx + 22,
+        center.dy - 10,
+      );
+    canvas.drawPath(outer, paint);
+    canvas.drawPath(inner, paint);
+  }
+
+  void _drawRocket(Canvas canvas, Offset center, Paint paint) {
+    final body = Path()
+      ..moveTo(center.dx, center.dy - 28)
+      ..quadraticBezierTo(
+        center.dx + 18,
+        center.dy - 8,
+        center.dx + 8,
+        center.dy + 22,
+      )
+      ..lineTo(center.dx - 8, center.dy + 22)
+      ..quadraticBezierTo(
+        center.dx - 18,
+        center.dy - 8,
+        center.dx,
+        center.dy - 28,
+      )
+      ..close();
+    canvas.drawPath(body, paint);
+    canvas.drawCircle(center + const Offset(0, -4), 5, paint);
+    canvas.drawLine(
+      center + const Offset(-8, 18),
+      center + const Offset(-18, 28),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(8, 18),
+      center + const Offset(18, 28),
+      paint,
+    );
+  }
+
+  void _drawFlower(Canvas canvas, Offset center, Paint paint) {
+    for (var i = 0; i < 5; i += 1) {
+      final angle = i * pi * 2 / 5;
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: center + Offset(cos(angle) * 10, sin(angle) * 10),
+          width: 12,
+          height: 8,
+        ),
+        paint,
+      );
+    }
+    canvas.drawCircle(center, 3, paint);
+    canvas.drawLine(
+      center + const Offset(0, 12),
+      center + const Offset(0, 28),
+      paint,
+    );
+  }
+
+  void _drawCloud(Canvas canvas, Offset center, Paint paint) {
+    final path = Path()
+      ..moveTo(center.dx - 28, center.dy + 8)
+      ..cubicTo(
+        center.dx - 26,
+        center.dy - 8,
+        center.dx - 10,
+        center.dy - 10,
+        center.dx - 4,
+        center.dy - 3,
+      )
+      ..cubicTo(
+        center.dx + 2,
+        center.dy - 18,
+        center.dx + 24,
+        center.dy - 10,
+        center.dx + 20,
+        center.dy + 4,
+      )
+      ..cubicTo(
+        center.dx + 34,
+        center.dy + 4,
+        center.dx + 32,
+        center.dy + 18,
+        center.dx + 18,
+        center.dy + 18,
+      )
+      ..lineTo(center.dx - 18, center.dy + 18)
+      ..cubicTo(
+        center.dx - 30,
+        center.dy + 18,
+        center.dx - 36,
+        center.dy + 10,
+        center.dx - 28,
+        center.dy + 8,
+      );
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawPineapple(Canvas canvas, Offset center, Paint paint) {
+    canvas.drawOval(
+      Rect.fromCenter(center: center, width: 26, height: 42),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(-8, -8),
+      center + const Offset(8, 8),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(8, -8),
+      center + const Offset(-8, 8),
+      paint,
+    );
+    final crown = Path()
+      ..moveTo(center.dx - 8, center.dy - 22)
+      ..lineTo(center.dx - 14, center.dy - 38)
+      ..lineTo(center.dx, center.dy - 26)
+      ..lineTo(center.dx + 10, center.dy - 40)
+      ..lineTo(center.dx + 8, center.dy - 22);
+    canvas.drawPath(crown, paint);
+  }
+
+  void _drawCandy(Canvas canvas, Offset center, Paint paint) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: center, width: 28, height: 14),
+        const Radius.circular(8),
+      ),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(-14, 0),
+      center + const Offset(-24, -8),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(-14, 0),
+      center + const Offset(-24, 8),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(14, 0),
+      center + const Offset(24, -8),
+      paint,
+    );
+    canvas.drawLine(
+      center + const Offset(14, 0),
+      center + const Offset(24, 8),
+      paint,
+    );
+  }
+
+  void _drawWallpaperDoodle(
+    Canvas canvas,
+    Offset center, {
+    required int variant,
+    required Paint paint,
+  }) {
+    switch (variant) {
+      case 0:
+        _drawChubbyCat(canvas, center, paint);
+      case 1:
+        _drawPaperPlane(canvas, center, paint);
+      case 2:
+        _drawBanana(canvas, center, paint);
+      case 3:
+        _drawRocket(canvas, center, paint);
+      case 4:
+        _drawChubbyBird(canvas, center, paint);
+      case 5:
+        _drawPineapple(canvas, center, paint);
+      case 6:
+        _drawLeaf(canvas, center, paint);
+      case 7:
+        _drawRoundPenguin(canvas, center, paint);
+      case 8:
+        _drawTinyWhale(canvas, center, paint);
+      case 9:
+        _drawCloud(canvas, center, paint);
+      case 10:
+        _drawFlower(canvas, center, paint);
+      case 11:
+        _drawBubble(canvas, center, paint);
+      case 12:
+        _drawCandy(canvas, center, paint);
+      case 13:
+        _drawTinyHeart(canvas, center, paint);
+      case 14:
+        _drawStar(canvas, center, paint);
+      case 15:
+        _drawDoubleRing(canvas, center, paint);
+      case 16:
+        _drawCastle(canvas, center, paint);
+      case 17:
+        _drawPizza(canvas, center, paint);
+      case 18:
+        _drawDonut(canvas, center, paint);
+      case 19:
+        _drawMoon(canvas, center, paint);
+      case 20:
+        _drawRobot(canvas, center, paint);
+      case 21:
+        _drawPlanet(canvas, center, paint);
+      case 22:
+        _drawGamepad(canvas, center, paint);
+      case 23:
+        _drawGift(canvas, center, paint);
+      case 24:
+        _drawIceCream(canvas, center, paint);
+      case 25:
+        _drawFish(canvas, center, paint);
+      case 26:
+        _drawBone(canvas, center, paint);
+      case 27:
+        _drawBurger(canvas, center, paint);
+      case 28:
+        _drawCrown(canvas, center, paint);
+      case 29:
+        _drawMushroom(canvas, center, paint);
+      case 30:
+        _drawBalloon(canvas, center, paint);
+      case 31:
+        _drawAnchor(canvas, center, paint);
+      case 32:
+        _drawSubmarine(canvas, center, paint);
+      case 33:
+        _drawPencil(canvas, center, paint);
+      case 34:
+        _drawUfo(canvas, center, paint);
+      default:
+        _drawCamera(canvas, center, paint);
+    }
+  }
+
+  void _drawCastle(Canvas canvas, Offset c, Paint p) {
+    final path = Path()
+      ..moveTo(c.dx - 18, c.dy + 14)
+      ..lineTo(c.dx - 18, c.dy - 10)
+      ..lineTo(c.dx - 10, c.dy - 10)
+      ..lineTo(c.dx - 10, c.dy - 18)
+      ..lineTo(c.dx - 2, c.dy - 18)
+      ..lineTo(c.dx - 2, c.dy - 10)
+      ..lineTo(c.dx + 8, c.dy - 10)
+      ..lineTo(c.dx + 8, c.dy - 18)
+      ..lineTo(c.dx + 16, c.dy - 18)
+      ..lineTo(c.dx + 16, c.dy + 14)
+      ..close();
+    canvas.drawPath(path, p);
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(-1, 14), width: 12, height: 18),
+      pi,
+      pi,
+      false,
+      p,
+    );
+  }
+
+  void _drawPizza(Canvas canvas, Offset c, Paint p) {
+    final path = Path()
+      ..moveTo(c.dx - 16, c.dy - 14)
+      ..lineTo(c.dx + 18, c.dy - 6)
+      ..lineTo(c.dx - 6, c.dy + 18)
+      ..close();
+    canvas.drawPath(path, p);
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(-1, -4), width: 34, height: 12),
+      0.2,
+      pi * 0.9,
+      false,
+      p,
+    );
+    canvas.drawCircle(c + const Offset(-2, 0), 1.8, p);
+    canvas.drawCircle(c + const Offset(6, -4), 1.5, p);
+  }
+
+  void _drawDonut(Canvas canvas, Offset c, Paint p) {
+    canvas.drawCircle(c, 15, p);
+    canvas.drawCircle(c, 6, p);
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(1, -1), width: 22, height: 18),
+      0.4,
+      pi * 0.8,
+      false,
+      p,
+    );
+  }
+
+  void _drawMoon(Canvas canvas, Offset c, Paint p) {
+    canvas.drawArc(
+      Rect.fromCenter(center: c, width: 28, height: 32),
+      pi * 0.34,
+      pi * 1.34,
+      false,
+      p,
+    );
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(8, -1), width: 22, height: 28),
+      pi * 0.44,
+      pi * 1.12,
+      false,
+      p,
+    );
+  }
+
+  void _drawRobot(Canvas canvas, Offset c, Paint p) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: c, width: 28, height: 24),
+        const Radius.circular(5),
+      ),
+      p,
+    );
+    canvas.drawLine(c + const Offset(0, -12), c + const Offset(0, -20), p);
+    canvas.drawCircle(c + const Offset(0, -22), 2, p);
+    canvas.drawCircle(c + const Offset(-7, -2), 2, p);
+    canvas.drawCircle(c + const Offset(7, -2), 2, p);
+    canvas.drawLine(c + const Offset(-7, 8), c + const Offset(7, 8), p);
+  }
+
+  void _drawPlanet(Canvas canvas, Offset c, Paint p) {
+    canvas.drawCircle(c, 12, p);
+    canvas.drawArc(
+      Rect.fromCenter(center: c, width: 40, height: 14),
+      0,
+      pi,
+      false,
+      p,
+    );
+    canvas.drawArc(
+      Rect.fromCenter(center: c, width: 40, height: 14),
+      pi,
+      pi,
+      false,
+      p,
+    );
+  }
+
+  void _drawGamepad(Canvas canvas, Offset c, Paint p) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: c, width: 38, height: 22),
+        const Radius.circular(10),
+      ),
+      p,
+    );
+    canvas.drawLine(c + const Offset(-13, 0), c + const Offset(-5, 0), p);
+    canvas.drawLine(c + const Offset(-9, -4), c + const Offset(-9, 4), p);
+    canvas.drawCircle(c + const Offset(8, -2), 1.8, p);
+    canvas.drawCircle(c + const Offset(15, 3), 1.8, p);
+  }
+
+  void _drawGift(Canvas canvas, Offset c, Paint p) {
+    canvas.drawRect(Rect.fromCenter(center: c, width: 28, height: 24), p);
+    canvas.drawLine(c + const Offset(0, -12), c + const Offset(0, 12), p);
+    canvas.drawLine(c + const Offset(-14, -4), c + const Offset(14, -4), p);
+    canvas.drawOval(
+      Rect.fromCenter(center: c + const Offset(-6, -16), width: 12, height: 8),
+      p,
+    );
+    canvas.drawOval(
+      Rect.fromCenter(center: c + const Offset(6, -16), width: 12, height: 8),
+      p,
+    );
+  }
+
+  void _drawIceCream(Canvas canvas, Offset c, Paint p) {
+    canvas.drawCircle(c + const Offset(0, -10), 11, p);
+    final cone = Path()
+      ..moveTo(c.dx - 10, c.dy)
+      ..lineTo(c.dx + 10, c.dy)
+      ..lineTo(c.dx, c.dy + 24)
+      ..close();
+    canvas.drawPath(cone, p);
+  }
+
+  void _drawFish(Canvas canvas, Offset c, Paint p) {
+    canvas.drawOval(Rect.fromCenter(center: c, width: 34, height: 18), p);
+    final tail = Path()
+      ..moveTo(c.dx - 17, c.dy)
+      ..lineTo(c.dx - 30, c.dy - 10)
+      ..lineTo(c.dx - 30, c.dy + 10)
+      ..close();
+    canvas.drawPath(tail, p);
+    canvas.drawCircle(c + const Offset(9, -2), 1.8, p);
+  }
+
+  void _drawBone(Canvas canvas, Offset c, Paint p) {
+    canvas.drawLine(c + const Offset(-14, -8), c + const Offset(14, 8), p);
+    canvas.drawCircle(c + const Offset(-18, -10), 5, p);
+    canvas.drawCircle(c + const Offset(-12, -16), 5, p);
+    canvas.drawCircle(c + const Offset(18, 10), 5, p);
+    canvas.drawCircle(c + const Offset(12, 16), 5, p);
+  }
+
+  void _drawBurger(Canvas canvas, Offset c, Paint p) {
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(0, -4), width: 34, height: 22),
+      pi,
+      pi,
+      false,
+      p,
+    );
+    canvas.drawLine(c + const Offset(-17, 2), c + const Offset(17, 2), p);
+    canvas.drawLine(c + const Offset(-15, 10), c + const Offset(15, 10), p);
+  }
+
+  void _drawCrown(Canvas canvas, Offset c, Paint p) {
+    final path = Path()
+      ..moveTo(c.dx - 18, c.dy + 10)
+      ..lineTo(c.dx - 14, c.dy - 12)
+      ..lineTo(c.dx - 4, c.dy + 2)
+      ..lineTo(c.dx + 4, c.dy - 14)
+      ..lineTo(c.dx + 14, c.dy + 2)
+      ..lineTo(c.dx + 18, c.dy - 12)
+      ..lineTo(c.dx + 18, c.dy + 10)
+      ..close();
+    canvas.drawPath(path, p);
+  }
+
+  void _drawMushroom(Canvas canvas, Offset c, Paint p) {
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(0, -2), width: 34, height: 26),
+      pi,
+      pi,
+      false,
+      p,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: c + const Offset(0, 10), width: 14, height: 20),
+        const Radius.circular(7),
+      ),
+      p,
+    );
+    canvas.drawCircle(c + const Offset(-8, -8), 2, p);
+    canvas.drawCircle(c + const Offset(8, -7), 2, p);
+  }
+
+  void _drawBalloon(Canvas canvas, Offset c, Paint p) {
+    canvas.drawOval(
+      Rect.fromCenter(center: c + const Offset(0, -8), width: 24, height: 30),
+      p,
+    );
+    canvas.drawLine(c + const Offset(0, 8), c + const Offset(-4, 24), p);
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(0, 23), width: 10, height: 8),
+      0,
+      pi,
+      false,
+      p,
+    );
+  }
+
+  void _drawAnchor(Canvas canvas, Offset c, Paint p) {
+    canvas.drawCircle(c + const Offset(0, -14), 5, p);
+    canvas.drawLine(c + const Offset(0, -9), c + const Offset(0, 16), p);
+    canvas.drawLine(c + const Offset(-10, -2), c + const Offset(10, -2), p);
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(0, 6), width: 34, height: 28),
+      0.15,
+      pi - 0.3,
+      false,
+      p,
+    );
+  }
+
+  void _drawSubmarine(Canvas canvas, Offset c, Paint p) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: c, width: 40, height: 20),
+        const Radius.circular(12),
+      ),
+      p,
+    );
+    canvas.drawLine(c + const Offset(0, -10), c + const Offset(0, -20), p);
+    canvas.drawLine(c + const Offset(0, -20), c + const Offset(10, -20), p);
+    canvas.drawCircle(c + const Offset(-9, 0), 3, p);
+    canvas.drawCircle(c + const Offset(7, 0), 3, p);
+  }
+
+  void _drawPencil(Canvas canvas, Offset c, Paint p) {
+    final path = Path()
+      ..moveTo(c.dx - 20, c.dy + 12)
+      ..lineTo(c.dx + 10, c.dy - 18)
+      ..lineTo(c.dx + 20, c.dy - 8)
+      ..lineTo(c.dx - 10, c.dy + 22)
+      ..close();
+    canvas.drawPath(path, p);
+    canvas.drawLine(c + const Offset(10, -18), c + const Offset(20, -8), p);
+  }
+
+  void _drawUfo(Canvas canvas, Offset c, Paint p) {
+    canvas.drawOval(Rect.fromCenter(center: c, width: 42, height: 14), p);
+    canvas.drawArc(
+      Rect.fromCenter(center: c + const Offset(0, -4), width: 22, height: 20),
+      pi,
+      pi,
+      false,
+      p,
+    );
+    canvas.drawCircle(c + const Offset(-10, 2), 1.6, p);
+    canvas.drawCircle(c + const Offset(10, 2), 1.6, p);
+  }
+
+  void _drawCamera(Canvas canvas, Offset c, Paint p) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: c, width: 34, height: 24),
+        const Radius.circular(5),
+      ),
+      p,
+    );
+    canvas.drawRect(
+      Rect.fromCenter(center: c + const Offset(-8, -14), width: 12, height: 6),
+      p,
+    );
+    canvas.drawCircle(c, 7, p);
   }
 
   @override
