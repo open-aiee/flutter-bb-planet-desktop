@@ -18,208 +18,66 @@ class OperatorLoginScreen extends ConsumerStatefulWidget {
 }
 
 class _OperatorLoginScreenState extends ConsumerState<OperatorLoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _userNameController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _googleCodeController = TextEditingController();
-
-  @override
-  void dispose() {
-    _userNameController.dispose();
-    _passwordController.dispose();
-    _googleCodeController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final authState = ref.watch(operatorAuthControllerProvider);
 
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xfff7f8f5), Color(0xffe9f4ee), Colors.white],
-          ),
-        ),
+        color: const Color(0xfff0f2f5),
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 980),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 42),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xfffff3cd),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: const Color(0xffffd45a)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.warning_amber_rounded,
-                                size: 18,
-                                color: Color(0xff8a6100),
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                'High-risk operator workspace',
-                                style: TextStyle(
-                                  color: Color(0xff6f4e00),
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        Text(
-                          l10n.appTitle,
-                          style: Theme.of(context).textTheme.headlineMedium
-                              ?.copyWith(
-                                color: const Color(0xff111b21),
-                                fontSize: 38,
-                              ),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          l10n.operatorLoginSubtitle,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                color: const Color(0xff3b4a54),
-                                height: 1.45,
-                              ),
-                        ),
-                        const SizedBox(height: 24),
-                        _IdentityBoundaryCard(l10n: l10n),
-                      ],
-                    ),
+            constraints: const BoxConstraints(maxWidth: 1020),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(3),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 28,
+                    offset: const Offset(0, 12),
                   ),
-                ),
-                SizedBox(
-                  width: 440,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Form(
-                        key: _formKey,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              l10n.operatorIdentity,
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              l10n.identityGuardHint,
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 24),
-                            TextFormField(
-                              controller: _userNameController,
-                              enabled: !authState.isLoading,
-                              decoration: InputDecoration(
-                                labelText: l10n.operatorAccount,
-                              ),
-                              validator: (value) => _isBlank(value)
-                                  ? l10n.operatorAccountRequired
-                                  : null,
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _passwordController,
-                              enabled: !authState.isLoading,
-                              obscureText: true,
-                              decoration: InputDecoration(
-                                labelText: l10n.password,
-                              ),
-                              validator: (value) =>
-                                  _isBlank(value) ? l10n.passwordRequired : null,
-                              onFieldSubmitted: (_) => _submit(),
-                            ),
-                            const SizedBox(height: 12),
-                            TextFormField(
-                              controller: _googleCodeController,
-                              enabled: !authState.isLoading,
-                              decoration: InputDecoration(
-                                labelText: l10n.googleCodeOptional,
-                              ),
-                              onFieldSubmitted: (_) => _submit(),
-                            ),
-                            if (authState.errorMessage != null) ...[
-                              const SizedBox(height: 14),
-                              _LoginErrorBanner(
-                                message: authState.errorMessage!,
-                              ),
-                            ],
-                            const SizedBox(height: 22),
-                            FilledButton(
-                              onPressed: authState.isLoading ? null : _submit,
-                              child: authState.isLoading
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : Text(l10n.signIn),
-                            ),
-                            if (appConfig.allowAuthBypass) ...[
-                              const SizedBox(height: 12),
-                              TextButton(
-                                onPressed: authState.isLoading
-                                    ? null
-                                    : _bypass,
-                                child: Text(l10n.devEnterWorkspace),
-                              ),
-                            ],
-                          ],
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(68, 58, 34, 44),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      flex: 7,
+                      child: Transform.translate(
+                        offset: const Offset(0, -30),
+                        child: const _QrLoginInstructions(),
+                      ),
+                    ),
+                    const SizedBox(width: 150),
+                    Expanded(
+                      flex: 4,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Transform.translate(
+                          offset: const Offset(-60, 0),
+                          child: _DesktopQrPanel(
+                            developmentEntry: appConfig.allowAuthBypass
+                                ? TextButton(
+                                    onPressed: _bypass,
+                                    child: Text(l10n.devEnterWorkspace),
+                                  )
+                                : null,
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
-  }
-
-  bool _isBlank(String? value) => value == null || value.trim().isEmpty;
-
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-    final success = await ref
-        .read(operatorAuthControllerProvider.notifier)
-        .login(
-          userName: _userNameController.text,
-          password: _passwordController.text,
-          googleCode: _googleCodeController.text,
-        );
-    if (success && mounted) {
-      context.go(ChatOpsWorkspaceScreen.routePath);
-    }
   }
 
   void _bypass() {
@@ -228,83 +86,69 @@ class _OperatorLoginScreenState extends ConsumerState<OperatorLoginScreen> {
   }
 }
 
-class _IdentityBoundaryCard extends StatelessWidget {
-  const _IdentityBoundaryCard({required this.l10n});
-
-  final AppLocalizations l10n;
+class _QrLoginInstructions extends StatelessWidget {
+  const _QrLoginInstructions();
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0xffd9e5df)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _BoundaryRow(
-              icon: Icons.admin_panel_settings_rounded,
-              title: l10n.operatorIdentity,
-              detail: l10n.operatorLoginSubtitle,
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
-              child: Divider(height: 1),
-            ),
-            _BoundaryRow(
-              icon: Icons.record_voice_over_rounded,
-              title: l10n.speakingIdentity,
-              detail: l10n.appAccountLoginSubtitle,
-            ),
-          ],
+    return const Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'To use Desktop on your computer:',
+          style: TextStyle(
+            color: Color(0xff111b21),
+            fontSize: 28,
+            height: 36 / 28,
+            fontWeight: FontWeight.w300,
+          ),
         ),
-      ),
+        SizedBox(height: 34),
+        _LoginStep(index: 1, text: 'Open App on your phone'),
+        _LoginStep(index: 2, text: 'Find the top right corner of my page'),
+        _LoginStep(index: 3, text: 'Tap on QR'),
+        _LoginStep(
+          index: 4,
+          text: 'Point your phone to this screen to capture the code',
+        ),
+      ],
     );
   }
 }
 
-class _BoundaryRow extends StatelessWidget {
-  const _BoundaryRow({
-    required this.icon,
-    required this.title,
-    required this.detail,
-  });
+class _LoginStep extends StatelessWidget {
+  const _LoginStep({required this.index, required this.text});
 
-  final IconData icon;
-  final String title;
-  final String detail;
+  final int index;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: const Color(0xff1da855), size: 24),
-        const SizedBox(width: 12),
+        SizedBox(
+          width: 26,
+          child: Text(
+            '$index.',
+            style: const TextStyle(
+              color: Color(0xff3b4a54),
+              fontSize: 18,
+              height: 32 / 18,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  color: Color(0xff111b21),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                detail,
-                style: const TextStyle(
-                  color: Color(0xff54656f),
-                  height: 1.35,
-                ),
-              ),
-            ],
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xff3b4a54),
+              fontSize: 18,
+              height: 32 / 18,
+              fontWeight: FontWeight.w400,
+            ),
           ),
         ),
       ],
@@ -312,25 +156,92 @@ class _BoundaryRow extends StatelessWidget {
   }
 }
 
-class _LoginErrorBanner extends StatelessWidget {
-  const _LoginErrorBanner({required this.message});
+class _DesktopQrPanel extends StatelessWidget {
+  const _DesktopQrPanel({this.developmentEntry});
 
-  final String message;
+  final Widget? developmentEntry;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.error.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(
-          message,
-          style: TextStyle(color: Theme.of(context).colorScheme.error),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 286,
+          height: 286,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: const Color(0xffe5e9ec)),
+          ),
+          child: const CustomPaint(painter: _QrCodePlaceholderPainter()),
         ),
-      ),
+        const SizedBox(height: 18),
+        const Text(
+          'Scan to sign in',
+          style: TextStyle(
+            color: Color(0xff54656f),
+            fontSize: 14,
+            height: 20 / 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        if (developmentEntry != null) ...[
+          const SizedBox(height: 8),
+          developmentEntry!,
+        ],
+      ],
     );
   }
+}
+
+class _QrCodePlaceholderPainter extends CustomPainter {
+  const _QrCodePlaceholderPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cell = size.width / 29;
+    final paint = Paint()..color = const Color(0xff111b21);
+    final lightPaint = Paint()..color = const Color(0xffdce5e7);
+
+    canvas.drawRect(Offset.zero & size, Paint()..color = Colors.white);
+    void drawFinder(int x, int y) {
+      final rect = Rect.fromLTWH(x * cell, y * cell, cell * 7, cell * 7);
+      canvas.drawRect(rect, paint);
+      canvas.drawRect(rect.deflate(cell), Paint()..color = Colors.white);
+      canvas.drawRect(rect.deflate(cell * 2), paint);
+    }
+
+    drawFinder(0, 0);
+    drawFinder(22, 0);
+    drawFinder(0, 22);
+
+    for (var y = 0; y < 29; y += 1) {
+      for (var x = 0; x < 29; x += 1) {
+        final inFinder =
+            (x < 8 && y < 8) || (x > 20 && y < 8) || (x < 8 && y > 20);
+        if (inFinder) {
+          continue;
+        }
+        final filled =
+            ((x * 11 + y * 7) % 5 == 0) ||
+            ((x * 3 + y * 13) % 11 == 0) ||
+            (x > 10 && y > 10 && (x + y) % 7 == 0);
+        if (filled) {
+          canvas.drawRect(
+            Rect.fromLTWH(x * cell, y * cell, cell * 0.92, cell * 0.92),
+            paint,
+          );
+        } else if ((x + y) % 17 == 0) {
+          canvas.drawRect(
+            Rect.fromLTWH(x * cell, y * cell, cell * 0.8, cell * 0.8),
+            lightPaint,
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

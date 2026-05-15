@@ -2116,7 +2116,7 @@ class _LeftSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 424,
+      width: 382,
       child: Row(
         children: [
           _NavigationRail(
@@ -2573,7 +2573,7 @@ class _ConversationPane extends StatelessWidget {
           Positioned(
             left: 18,
             top: 12,
-            width: 272,
+            width: 246,
             child: Text(
               title,
               textAlign: TextAlign.center,
@@ -2587,7 +2587,7 @@ class _ConversationPane extends StatelessWidget {
             ),
           ),
           Positioned(
-            right: 20,
+            right: 14,
             top: 13,
             child: Icon(
               Icons.keyboard_arrow_down_rounded,
@@ -2598,7 +2598,7 @@ class _ConversationPane extends StatelessWidget {
           Positioned(
             left: 18,
             top: 42,
-            width: 312,
+            width: 281,
             child: _SearchField(
               hintText: l10n.workspaceSearchHint,
               value: searchQuery,
@@ -2607,7 +2607,7 @@ class _ConversationPane extends StatelessWidget {
           ),
           Positioned(
             left: 10,
-            width: 312,
+            width: 281,
             top: 108,
             bottom: 0,
             child: AnimatedSwitcher(
@@ -2695,7 +2695,7 @@ class _SearchFieldState extends State<_SearchField> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 312,
+      width: 281,
       height: 32,
       decoration: BoxDecoration(
         color: const Color(0xfff0f2f5),
@@ -2836,107 +2836,109 @@ class _ConversationTile extends StatelessWidget {
         focusColor: Colors.transparent,
         highlightColor: Colors.transparent,
         borderRadius: BorderRadius.circular(8),
-        child: Container(
-          width: 312,
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xfff0f2f5) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            children: [
-              _LetterAvatar(
-                color: item.color,
-                label: item.emoji,
-                avatarUrl: item.avatarUrl,
-                online: item.isOnline,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xff3b4a54),
-                        fontSize: 16,
-                        height: 24 / 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.message,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xff3b4a54),
-                        fontSize: 12,
-                        height: 16 / 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+        child: Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Container(
+            height: 60,
+            padding: const EdgeInsets.fromLTRB(6, 4, 16, 4),
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xfff0f2f5) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                _LetterAvatar(
+                  color: item.color,
+                  label: item.emoji,
+                  avatarUrl: item.avatarUrl,
+                  online: item.isOnline,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    item.time,
-                    style: TextStyle(
-                      color: item.unread > 0
-                          ? const Color(0xff1da855)
-                          : const Color(0xff667781),
-                      fontSize: 10,
-                      height: 16 / 10,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  if (item.unread > 0)
-                    Container(
-                      width: 20,
-                      height: 20,
-                      decoration: const BoxDecoration(
-                        color: Color(0xff21c563),
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        '${item.unread}',
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          height: 1,
+                          color: Color(0xff3b4a54),
+                          fontSize: 16,
+                          height: 24 / 16,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                    )
-                  else if (item.pinned)
-                    const Icon(
-                      Icons.push_pin,
-                      size: 14,
-                      color: Color(0xff667781),
-                    )
-                  else if (item.delivered)
-                    Icon(
-                      Icons.done_all,
-                      size: 16,
-                      color: item.deliveredRead
-                          ? const Color(0xff53bdeb)
-                          : const Color(0xff667781),
-                    )
-                  else
-                    const SizedBox(height: 20),
-                ],
-              ),
-            ],
+                      const SizedBox(height: 2),
+                      Text(
+                        item.message,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xff3b4a54),
+                          fontSize: 12,
+                          height: 16 / 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      item.time,
+                      style: TextStyle(
+                        color: item.unread > 0
+                            ? const Color(0xff1da855)
+                            : const Color(0xff667781),
+                        fontSize: 10,
+                        height: 16 / 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    if (item.unread > 0)
+                      Container(
+                        width: 20,
+                        height: 20,
+                        decoration: const BoxDecoration(
+                          color: Color(0xff21c563),
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${item.unread}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            height: 1,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    else if (item.pinned)
+                      const Icon(
+                        Icons.push_pin,
+                        size: 14,
+                        color: Color(0xff667781),
+                      )
+                    else if (item.delivered)
+                      Icon(
+                        Icons.done_all,
+                        size: 16,
+                        color: item.deliveredRead
+                            ? const Color(0xff53bdeb)
+                            : const Color(0xff667781),
+                      )
+                    else
+                      const SizedBox(height: 20),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3193,8 +3195,8 @@ class _ChatSectionState extends State<_ChatSection> {
           Positioned(
             left: 0,
             right: 0,
-            top: 150,
-            bottom: 80,
+            top: 50,
+            bottom: 48,
             child: _ScrollableMessageList(
               controller: _messageScrollController,
               messages: widget.messages,
@@ -3202,7 +3204,7 @@ class _ChatSectionState extends State<_ChatSection> {
           ),
           Positioned(
             right: 24,
-            bottom: 96,
+            bottom: 56,
             child: _JumpToBottomButton(
               visible: _showJumpToBottom,
               onPressed: _scrollToBottom,
@@ -3244,6 +3246,7 @@ class _ScrollableMessageList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final items = _MessageTimelineItem.build(messages);
     return RawScrollbar(
       controller: controller,
       thumbVisibility: true,
@@ -3255,21 +3258,88 @@ class _ScrollableMessageList extends StatelessWidget {
       child: ListView.builder(
         controller: controller,
         primary: false,
-        padding: const EdgeInsets.fromLTRB(12, 0, 16, 8),
+        padding: const EdgeInsets.fromLTRB(12, 16, 16, 8),
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: messages.length + 1,
+        itemCount: items.length,
         itemBuilder: (context, index) {
-          if (index == 0) {
-            return const Padding(
+          final item = items[index];
+          final dateLabel = item.dateLabel;
+          if (dateLabel != null) {
+            return Padding(
               padding: EdgeInsets.only(bottom: 18),
-              child: Center(child: _DatePill()),
+              child: Center(child: _DatePill(label: dateLabel)),
             );
           }
-          return _MessageListItem(message: messages[index - 1]);
+          return _MessageListItem(message: item.message!);
         },
       ),
     );
   }
+}
+
+class _MessageTimelineItem {
+  const _MessageTimelineItem.date(this.dateLabel) : message = null;
+
+  const _MessageTimelineItem.message(this.message) : dateLabel = null;
+
+  final String? dateLabel;
+  final _ChatMessage? message;
+
+  static List<_MessageTimelineItem> build(List<_ChatMessage> messages) {
+    if (messages.isEmpty) {
+      return [_MessageTimelineItem.date(_formatDatePillLabel(DateTime.now()))];
+    }
+
+    final items = <_MessageTimelineItem>[];
+    DateTime? previousDay;
+    for (final message in messages) {
+      final currentDay = _dateOnly(message.createdAt.toLocal());
+      if (previousDay == null || currentDay != previousDay) {
+        items.add(_MessageTimelineItem.date(_formatDatePillLabel(currentDay)));
+        previousDay = currentDay;
+      }
+      items.add(_MessageTimelineItem.message(message));
+    }
+    return items;
+  }
+}
+
+DateTime _dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+
+bool _isSameDate(DateTime a, DateTime b) =>
+    a.year == b.year && a.month == b.month && a.day == b.day;
+
+String _formatDatePillLabel(DateTime date) {
+  final local = date.toLocal();
+  final today = _dateOnly(DateTime.now());
+  final yesterday = today.subtract(const Duration(days: 1));
+  if (_isSameDate(local, today)) {
+    return 'TODAY';
+  }
+  if (_isSameDate(local, yesterday)) {
+    return 'YESTERDAY';
+  }
+
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final month = months[local.month - 1];
+  if (local.year == today.year) {
+    return '$month ${local.day}';
+  }
+  return '$month ${local.day}, ${local.year}';
 }
 
 class _ChatEmptyState extends StatelessWidget {
@@ -3399,11 +3469,14 @@ class _ChatHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final peerUserId = conversation.targetUserId;
     final peerText = peerUserId == null ? '' : 'UID $peerUserId';
+    final statusText = conversation.isOnline
+        ? onlineText
+        : l10n.appAccountStatusOffline;
 
     return Container(
-      height: 96,
+      height: 50,
       color: const Color(0xfff7f7fc),
-      padding: const EdgeInsets.only(left: 24, right: 18, top: 12, bottom: 10),
+      padding: const EdgeInsets.only(left: 18, right: 16, top: 6, bottom: 6),
       child: Row(
         children: [
           _LetterAvatar(
@@ -3411,9 +3484,9 @@ class _ChatHeader extends StatelessWidget {
             label: conversation.emoji,
             avatarUrl: conversation.avatarUrl,
             online: conversation.isOnline,
-            size: 48,
+            size: 40,
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3424,53 +3497,51 @@ class _ChatHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xff111b21),
-                    fontSize: 16,
-                    height: 24 / 16,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    height: 18 / 14,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 1),
                 if (peerText.isNotEmpty)
-                  Text(
-                    peerText,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xff667781),
-                      fontSize: 11,
-                      height: 14 / 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                Row(
-                  children: [
-                    _OnlineDot(online: conversation.isOnline),
-                    const SizedBox(width: 5),
-                    Text(
-                      conversation.isOnline
-                          ? onlineText
-                          : l10n.appAccountStatusOffline,
-                      style: TextStyle(
-                        color: conversation.isOnline
-                            ? const Color(0xff54656f)
-                            : const Color(0xff8d969c),
-                        fontSize: 12,
-                        height: 16 / 12,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          peerText,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xff667781),
+                            fontSize: 11,
+                            height: 13 / 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                      const SizedBox(width: 8),
+                      _OnlineDot(online: conversation.isOnline),
+                      const SizedBox(width: 5),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          color: conversation.isOnline
+                              ? const Color(0xff1da855)
+                              : const Color(0xff8d969c),
+                          fontSize: 11,
+                          height: 13 / 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ),
-          const _HeaderIcon(Icons.videocam_rounded),
-          const SizedBox(width: 22),
           const _HeaderIcon(Icons.call_rounded),
-          const SizedBox(width: 22),
-          Container(width: 1, height: 24, color: const Color(0xffd8dfe3)),
           const SizedBox(width: 22),
           const _HeaderIcon(Icons.search_rounded),
           const SizedBox(width: 22),
-          const _HeaderIcon(Icons.keyboard_arrow_down_rounded),
+          const _HeaderIcon(Icons.more_horiz_rounded),
         ],
       ),
     );
@@ -3507,7 +3578,9 @@ class _HeaderIcon extends StatelessWidget {
 }
 
 class _DatePill extends StatelessWidget {
-  const _DatePill();
+  const _DatePill({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -3524,9 +3597,9 @@ class _DatePill extends StatelessWidget {
           ),
         ],
       ),
-      child: const Text(
-        'TODAY',
-        style: TextStyle(color: Color(0xff54656f), fontSize: 12.5),
+      child: Text(
+        label,
+        style: const TextStyle(color: Color(0xff54656f), fontSize: 12.5),
       ),
     );
   }
@@ -4511,6 +4584,30 @@ class _MessageInputState extends State<_MessageInput> {
     }
   }
 
+  Future<void> _cancelVoiceRecording() async {
+    if (!_isVoiceRecording || _isVoiceSending) {
+      return;
+    }
+    _voiceTimer?.cancel();
+    _voiceStopwatch
+      ..stop()
+      ..reset();
+    final path = _voicePath;
+    setState(() {
+      _isVoiceRecording = false;
+      _voiceSeconds = 0;
+      _voicePath = null;
+    });
+    try {
+      await _voiceRecorder.cancel();
+    } catch (_) {
+      // The recorder may already have stopped on some desktop backends.
+    }
+    if (path != null && path.isNotEmpty) {
+      unawaited(File(path).delete().catchError((_) => File(path)));
+    }
+  }
+
   Future<({bool exists, int fileSize})> _voiceInputFileReady(
     String? path,
   ) async {
@@ -4844,36 +4941,48 @@ class _MessageInputState extends State<_MessageInput> {
   Widget build(BuildContext context) {
     final hasText = _controller.text.trim().isNotEmpty;
     return Container(
-      height: 80,
-      color: const Color(0xfff6f6f6),
-      padding: const EdgeInsets.fromLTRB(23, 16, 22, 16),
+      height: 48,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xffdfe5e8), width: 1)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 3, 18, 3),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           IconButton(
-            tooltip: 'More',
-            onPressed: _toggleAttachmentMenu,
-            icon: AnimatedRotation(
-              turns: _attachOverlayEntry == null ? 0 : 0.125,
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
-              child: Icon(
-                Icons.add_rounded,
-                color: _attachOverlayEntry == null
-                    ? const Color(0xff253443)
-                    : const Color(0xff1da855),
-                size: 25,
-              ),
-            ),
+            tooltip: _isVoiceRecording ? 'Cancel recording' : 'Attach',
+            onPressed: _isVoiceRecording
+                ? _cancelVoiceRecording
+                : _toggleAttachmentMenu,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 38, height: 38),
+            icon: _isVoiceRecording
+                ? Image.asset(
+                    'assets/chat_input/telegram_delete.png',
+                    width: 25,
+                    height: 25,
+                  )
+                : AnimatedRotation(
+                    turns: _attachOverlayEntry == null ? 0 : 0.125,
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    child: Image.asset(
+                      'assets/chat_input/telegram_attach.png',
+                      width: 24,
+                      height: 24,
+                      color: _attachOverlayEntry == null
+                          ? const Color(0xff8d969c)
+                          : const Color(0xff1da855),
+                    ),
+                  ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
-            child: Container(
-              height: 48,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-              ),
+            child: SizedBox(
+              height: 38,
               child: Stack(
+                alignment: Alignment.centerLeft,
                 children: [
                   Shortcuts(
                     shortcuts: const {
@@ -4905,28 +5014,30 @@ class _MessageInputState extends State<_MessageInput> {
                           setState(() {});
                         },
                         textInputAction: TextInputAction.newline,
-                        cursorColor: const Color(0xff1da855),
+                        cursorColor: const Color(0xff5aa4e8),
                         style: const TextStyle(
                           color: Color(0xff111b21),
-                          fontSize: 14,
-                          height: 24 / 14,
+                          fontSize: 15,
+                          height: 22 / 15,
                         ),
                         decoration:
                             const InputDecoration(
                               border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.fromLTRB(
-                                24,
-                                12,
-                                24,
-                                12,
-                              ),
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              filled: false,
+                              fillColor: Colors.transparent,
+                              hoverColor: Colors.transparent,
+                              isCollapsed: true,
+                              contentPadding: EdgeInsets.zero,
                             ).copyWith(
-                              hintText: widget.hintText,
+                              hintText: 'Write a message...',
                               hintStyle: const TextStyle(
-                                color: Color(0xff8f8f8f),
-                                fontSize: 14,
-                                height: 24 / 14,
+                                color: Color(0xff9a9a9a),
+                                fontSize: 15,
+                                height: 22 / 15,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                       ),
@@ -4937,9 +5048,9 @@ class _MessageInputState extends State<_MessageInput> {
                       child: Container(
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
+                          borderRadius: BorderRadius.circular(4),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Row(
                           children: [
                             Container(
@@ -4990,23 +5101,39 @@ class _MessageInputState extends State<_MessageInput> {
               ),
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           MouseRegion(
+            opaque: true,
+            cursor: SystemMouseCursors.click,
             onEnter: _handleEmojiButtonEnter,
+            onHover: (_) {
+              if (_emojiOverlayEntry == null) {
+                _showEmojiPanel();
+              }
+            },
             onExit: _handleEmojiButtonExit,
-            child: IconButton(
-              tooltip: 'Emoji',
-              onPressed: _toggleEmojiPanel,
-              icon: Icon(
-                Icons.emoji_emotions_outlined,
-                color: _emojiOverlayEntry == null
-                    ? const Color(0xff54656f)
-                    : const Color(0xff1da855),
-                size: 26,
+            child: SizedBox(
+              width: 38,
+              height: 38,
+              child: IconButton(
+                onPressed: _toggleEmojiPanel,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 38,
+                  height: 38,
+                ),
+                icon: Image.asset(
+                  'assets/chat_input/telegram_emoji.png',
+                  width: 25,
+                  height: 25,
+                  color: _emojiOverlayEntry == null
+                      ? const Color(0xff8d969c)
+                      : const Color(0xff1da855),
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           IconButton(
             tooltip: _isVoiceRecording
                 ? AppLocalizations.of(context).mediaSend
@@ -5020,6 +5147,8 @@ class _MessageInputState extends State<_MessageInput> {
                 : hasText
                 ? (widget.onSend == null ? null : _send)
                 : (widget.onSendVoice == null ? null : _toggleVoiceRecording),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 38, height: 38),
             icon: _isVoiceSending
                 ? const SizedBox(
                     width: 20,
@@ -5029,16 +5158,19 @@ class _MessageInputState extends State<_MessageInput> {
                       color: Color(0xff1da855),
                     ),
                   )
-                : Icon(
-                    _isVoiceRecording
-                        ? Icons.send_rounded
-                        : hasText
-                        ? Icons.send_rounded
-                        : Icons.mic_rounded,
+                : _isVoiceRecording || hasText
+                ? Icon(
+                    Icons.send_rounded,
                     color: _isVoiceRecording
                         ? const Color(0xff1da855)
-                        : const Color(0xff54656f),
-                    size: 24,
+                        : const Color(0xff8d969c),
+                    size: 30,
+                  )
+                : Image.asset(
+                    'assets/chat_input/telegram_mic.png',
+                    width: 25,
+                    height: 25,
+                    color: const Color(0xff8d969c),
                   ),
           ),
         ],
@@ -7287,6 +7419,7 @@ class _ChatMessage {
   const _ChatMessage.incoming({
     required this.text,
     required this.time,
+    required this.createdAt,
     this.width = 342,
     this.singleLine = false,
     this.media,
@@ -7296,6 +7429,7 @@ class _ChatMessage {
   const _ChatMessage.outgoing({
     required this.text,
     required this.time,
+    required this.createdAt,
     this.width = 203,
     this.sendStatus = ChatMessageSendStatus.sent,
     this.media,
@@ -7310,6 +7444,7 @@ class _ChatMessage {
       return _ChatMessage.incoming(
         text: message.text,
         time: '$hour:$minute',
+        createdAt: message.createdAt,
         width: media == null
             ? _bubbleWidthFor(message.text)
             : media.bubbleWidth,
@@ -7320,6 +7455,7 @@ class _ChatMessage {
     return _ChatMessage.outgoing(
       text: message.text,
       time: '$hour:$minute',
+      createdAt: message.createdAt,
       width: media == null ? _bubbleWidthFor(message.text) : media.bubbleWidth,
       sendStatus: message.sendStatus,
       media: media,
@@ -7328,6 +7464,7 @@ class _ChatMessage {
 
   final String text;
   final String time;
+  final DateTime createdAt;
   final double width;
   final bool outgoing;
   final bool singleLine;
