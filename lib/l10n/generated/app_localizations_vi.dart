@@ -234,6 +234,37 @@ class AppLocalizationsVi extends AppLocalizations {
   String get mediaSendPending => 'Chưa kết nối chức năng gửi phương tiện.';
 
   @override
+  String get voiceRecordTitle => 'Tin nhắn thoại';
+
+  @override
+  String get voiceRecordHint => 'Bấm bắt đầu, nói, rồi gửi. Tối đa 60 giây.';
+
+  @override
+  String get voiceRecordingHint => 'Đang ghi âm... bấm dừng khi hoàn tất.';
+
+  @override
+  String get voiceRecordReady =>
+      'Tin nhắn thoại đã sẵn sàng. Gửi hoặc ghi lại.';
+
+  @override
+  String get voiceRecordAgain => 'Ghi lại';
+
+  @override
+  String get voiceStart => 'Bắt đầu';
+
+  @override
+  String get voiceStop => 'Dừng';
+
+  @override
+  String get voicePermissionDenied => 'Cần quyền micro để ghi âm.';
+
+  @override
+  String get voiceTooShort => 'Tin nhắn thoại quá ngắn.';
+
+  @override
+  String get voiceRecordFailed => 'Ghi âm thất bại. Vui lòng thử lại.';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override

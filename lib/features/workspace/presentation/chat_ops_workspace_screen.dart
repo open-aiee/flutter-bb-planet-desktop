@@ -10,10 +10,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 
 import '../../../app/locale/app_locale_provider.dart';
 import '../../../core/security/desktop_device_id.dart';
 import '../../../core/security/secure_store_provider.dart';
+import '../../../core/storage/desktop_data_directory.dart';
 import '../../../core/websocket/connection_status.dart';
 import '../../../core/websocket/im_session_manager.dart';
 import '../../../core/websocket/im_socket_client.dart'
@@ -38,6 +41,7 @@ enum _RailTab { chats, updates, communities, calls }
 const _maxChatMessageLength = 3000;
 const _collapsedMessageMaxLines = 15;
 const _maxChatVideoBytes = 50 * 1024 * 1024;
+const _maxVoiceRecordSeconds = 60;
 const _chatTextFontSize = 14.2;
 const _standaloneEmojiScale = 3.0;
 final _standaloneEmojiPattern = RegExp(
@@ -75,6 +79,20 @@ class _SelectedChatMedia {
   final String path;
   final String fileName;
   final bool isVideo;
+  final int fileSizeBytes;
+}
+
+class _SelectedVoiceRecording {
+  const _SelectedVoiceRecording({
+    required this.path,
+    required this.fileName,
+    required this.durationSeconds,
+    required this.fileSizeBytes,
+  });
+
+  final String path;
+  final String fileName;
+  final int durationSeconds;
   final int fileSizeBytes;
 }
 
@@ -183,6 +201,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   final Map<String, List<LocalChatMessage>> _storedMessages = {};
   final Map<int, LocalChatMessage> _recentMessagesByPeer = {};
   final Map<int, LocalChatPeerProfile> _peerProfiles = {};
+  Set<int>? _validChatPeerIds;
 
   @override
   void initState() {
@@ -312,6 +331,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
               onSendMedia: selectedConversation == null
                   ? null
                   : (media) => _sendMediaMessage(selectedConversation, media),
+              onSendVoice: selectedConversation == null
+                  ? null
+                  : (voice) => _sendVoiceMessage(selectedConversation, voice),
             ),
           ),
         ],
@@ -569,49 +591,112 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   List<_Conversation> _chatConversationsWithLocalFallback() {
     final localConversations = _localRecentConversations();
     if (_chatConversations.isEmpty) {
-      return localConversations;
+      return _dedupeConversationsByPeer(localConversations);
     }
     final remotePeerIds = _chatConversations
         .map((conversation) => conversation.targetUserId)
         .whereType<int>()
         .toSet();
-    return [
+    return _dedupeConversationsByPeer([
       ..._chatConversations,
       ...localConversations.where(
         (conversation) => !remotePeerIds.contains(conversation.targetUserId),
       ),
-    ];
+    ]);
+  }
+
+  List<_Conversation> _dedupeConversationsByPeer(
+    List<_Conversation> conversations,
+  ) {
+    final byPeer = <int, _Conversation>{};
+    final withoutPeer = <_Conversation>[];
+    for (final conversation in conversations) {
+      final peerUserId = conversation.targetUserId;
+      if (peerUserId == null || peerUserId <= 0) {
+        withoutPeer.add(conversation);
+        continue;
+      }
+      final current = byPeer[peerUserId];
+      if (current == null ||
+          _conversationSortTime(
+            conversation,
+          ).isAfter(_conversationSortTime(current)) ||
+          (_conversationSortTime(conversation) ==
+                  _conversationSortTime(current) &&
+              _conversationHasRealPreview(conversation) &&
+              !_conversationHasRealPreview(current))) {
+        byPeer[peerUserId] = conversation;
+      }
+    }
+    final deduped = [...byPeer.values, ...withoutPeer]
+      ..sort((left, right) {
+        final timeCompare = _conversationSortTime(
+          right,
+        ).compareTo(_conversationSortTime(left));
+        if (timeCompare != 0) {
+          return timeCompare;
+        }
+        return right.unread.compareTo(left.unread);
+      });
+    return deduped;
+  }
+
+  DateTime _conversationSortTime(_Conversation conversation) {
+    final peerUserId = conversation.targetUserId;
+    if (peerUserId != null) {
+      final latest = _recentMessagesByPeer[peerUserId];
+      if (latest != null) {
+        return latest.createdAt;
+      }
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  bool _conversationHasRealPreview(_Conversation conversation) {
+    final message = conversation.message.trim();
+    return message.isNotEmpty &&
+        message != AppLocalizations.of(context).workspaceUserOnline &&
+        message != AppLocalizations.of(context).appAccountStatusOffline;
   }
 
   List<_Conversation> _localRecentConversations() {
     final latestMessages = _recentMessagesByPeer.values.toList()
       ..sort((left, right) => right.createdAt.compareTo(left.createdAt));
-    return latestMessages.map((message) {
-      final peerUserId = message.peerUserId;
-      final profile = _peerProfiles[peerUserId];
-      final profileName = profile?.displayName.trim() ?? '';
-      final label = profileName.isEmpty ? 'Beepian$peerUserId' : profileName;
-      return _Conversation(
-        name: label,
-        message: _conversationPreviewText(message.text),
-        time: _formatConversationTime(message.createdAt),
-        color: _ConversationData.avatarColorFor(peerUserId),
-        emoji: label.characters.first.toUpperCase(),
-        avatarUrl: profile?.avatarUrl,
-        targetUserId: peerUserId,
-        roomId: message.roomId,
-        isOnline: false,
-        delivered:
-            message.direction == ChatMessageDirection.outgoing &&
-            (message.sendStatus == ChatMessageSendStatus.sent ||
-                message.sendStatus == ChatMessageSendStatus.read),
-        deliveredRead:
-            message.direction == ChatMessageDirection.outgoing &&
-            message.sendStatus == ChatMessageSendStatus.read,
-        unread: message.direction == ChatMessageDirection.incoming ? 1 : 0,
-        messages: const [],
-      );
-    }).toList();
+    return latestMessages
+        .where((message) {
+          final validPeerIds = _validChatPeerIds;
+          return validPeerIds == null ||
+              validPeerIds.contains(message.peerUserId);
+        })
+        .map((message) {
+          final peerUserId = message.peerUserId;
+          final profile = _peerProfiles[peerUserId];
+          final profileName = profile?.displayName.trim() ?? '';
+          final label = profileName.isEmpty
+              ? 'Beepian$peerUserId'
+              : profileName;
+          return _Conversation(
+            name: label,
+            message: _conversationPreviewText(message.text),
+            time: _formatConversationTime(message.createdAt),
+            color: _ConversationData.avatarColorFor(peerUserId),
+            emoji: label.characters.first.toUpperCase(),
+            avatarUrl: profile?.avatarUrl,
+            targetUserId: peerUserId,
+            roomId: message.roomId,
+            isOnline: false,
+            delivered:
+                message.direction == ChatMessageDirection.outgoing &&
+                (message.sendStatus == ChatMessageSendStatus.sent ||
+                    message.sendStatus == ChatMessageSendStatus.read),
+            deliveredRead:
+                message.direction == ChatMessageDirection.outgoing &&
+                message.sendStatus == ChatMessageSendStatus.read,
+            unread: message.direction == ChatMessageDirection.incoming ? 1 : 0,
+            messages: const [],
+          );
+        })
+        .toList();
   }
 
   String _requestLangOf(BuildContext context) {
@@ -835,6 +920,10 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     });
 
     try {
+      debugPrint(
+        '[CHAT_OPS][VOICE][SEND_STAGE] room_start '
+        'sender=${session.id} peer=$peerUserId local=${localMessage.localId}',
+      );
       final roomId = await _ensureConversationRoomId(conversation);
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
@@ -1123,6 +1212,158 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
                   : ack.message),
         msgData: jsonEncode(mediaData),
         localMediaPath: media.path,
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(completed);
+      _replaceStoredMessage(conversation, completed);
+      unawaited(
+        _syncRemoteMessages(
+          conversation,
+          cachedMessages: [completed],
+          roomIdOverride: roomId,
+        ),
+      );
+      return ack.success;
+    } catch (error) {
+      final failed = localMessage.copyWith(
+        sendStatus: ChatMessageSendStatus.failed,
+        errorMessage: error.toString(),
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(failed);
+      _replaceStoredMessage(conversation, failed);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(error.toString()),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _sendVoiceMessage(
+    _Conversation conversation,
+    _SelectedVoiceRecording voice,
+  ) async {
+    final session = widget.appAccountSession;
+    final peerUserId = conversation.targetUserId;
+    if (session == null || peerUserId == null || peerUserId <= 0) {
+      return false;
+    }
+    final now = DateTime.now();
+    final clientMessageId = now.microsecondsSinceEpoch.toString();
+    final initialConversationKey = directConversationKey(
+      appUserId: session.id,
+      peerUserId: peerUserId,
+    );
+    final requestLang = _requestLangOf(context);
+    final durationSeconds = max(1, voice.durationSeconds);
+    final localMessage = LocalChatMessage(
+      localId: 'local_$clientMessageId',
+      appUserId: session.id,
+      peerUserId: peerUserId,
+      roomId: _roomIdFor(conversation),
+      conversationKey: initialConversationKey,
+      direction: ChatMessageDirection.outgoing,
+      text: '[Voice]',
+      createdAt: now,
+      updatedAt: now,
+      sendStatus: ChatMessageSendStatus.pending,
+      clientMessageId: clientMessageId,
+      sendType: 2,
+      msgData: jsonEncode([
+        {
+          'localUrl': voice.path,
+          'mediaCover': '',
+          'media': '',
+          'mediaType': 4,
+          'duration': durationSeconds,
+        },
+      ]),
+      localMediaPath: voice.path,
+    );
+
+    final store = await ref.read(localChatMessageStoreProvider.future);
+    await store.upsert(localMessage);
+    if (!mounted) {
+      return false;
+    }
+    setState(() {
+      final key = _storageKeyFor(conversation);
+      final current = [...?_storedMessages[key]];
+      current.add(localMessage);
+      _storedMessages[key] = current;
+      _rememberRecentMessageInMemory(localMessage);
+    });
+
+    try {
+      final roomId = await _ensureConversationRoomId(conversation);
+      if (roomId == null || roomId <= 0) {
+        throw const DirectChatException('Unable to open chat.');
+      }
+      final updated = localMessage.copyWith(
+        roomId: roomId,
+        sendStatus: ChatMessageSendStatus.pending,
+        updatedAt: DateTime.now(),
+      );
+      await store.upsert(updated);
+      _replaceStoredMessage(conversation, updated);
+      ref.read(imSessionManagerProvider).refreshChatRooms();
+
+      final uploadApi = ref.read(chatMediaUploadApiProvider);
+      debugPrint(
+        '[CHAT_OPS][VOICE][SEND_STAGE] upload_start '
+        'room=$roomId path=${voice.path} size=${voice.fileSizeBytes}',
+      );
+      final voiceUrl = await uploadApi
+          .uploadTempVoice(
+            path: voice.path,
+            certificate: session.certificate,
+            deviceId: session.deviceId,
+            lang: requestLang,
+          )
+          .timeout(
+            const Duration(seconds: 18),
+            onTimeout: () =>
+                throw const ChatMediaUploadException('Voice upload timeout.'),
+          );
+      debugPrint('[CHAT_OPS][VOICE][SEND_STAGE] upload_done url=$voiceUrl');
+      final voiceData = {
+        'mediaCover': '',
+        'media': voiceUrl,
+        'mediaType': 4,
+        'duration': durationSeconds,
+      };
+      debugPrint('[CHAT_OPS][VOICE][SEND_STAGE] socket_start room=$roomId');
+      final ack = await ref
+          .read(imSessionManagerProvider)
+          .sendMediaMessage(
+            roomId: roomId,
+            msgData: [voiceData],
+            clientMessageId: clientMessageId,
+          );
+      debugPrint(
+        '[CHAT_OPS][VOICE][SEND_STAGE] socket_done success=${ack.success} '
+        'message=${ack.message}',
+      );
+      final completed = updated.copyWith(
+        sendStatus: ack.success
+            ? ChatMessageSendStatus.sent
+            : ChatMessageSendStatus.failed,
+        serverMessageId: ack.serverMessageId?.toString(),
+        errorMessage: ack.success
+            ? null
+            : (ack.message == null || ack.message!.trim().isEmpty
+                  ? 'Voice send failed'
+                  : ack.message),
+        msgData: jsonEncode(voiceData),
+        localMediaPath: voice.path,
         updatedAt: DateTime.now(),
       );
       await store.upsert(completed);
@@ -1612,7 +1853,10 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             certificate: session.certificate,
             deviceId: deviceId,
             lang: requestLang,
-            userIds: records.map((record) => record.peerUserId).toList(),
+            userIds: [
+              ...records.map((record) => record.peerUserId),
+              ..._recentMessagesByPeer.keys,
+            ],
           );
       if (!mounted ||
           requestId != _loadRequestId ||
@@ -1623,7 +1867,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       final userInfoById = {
         for (final userInfo in userInfos) userInfo.id: userInfo,
       };
+      final validPeerIds = userInfoById.keys.toSet();
       final conversations = records
+          .where((record) => validPeerIds.contains(record.peerUserId))
           .map((record) => _ConversationData.fromChatConversation(l10n, record))
           .map((conversation) {
             final peerUserId = conversation.targetUserId;
@@ -1643,6 +1889,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           })
           .toList();
       setState(() {
+        _validChatPeerIds = validPeerIds;
         _chatConversations = conversations;
         _chatNotice = conversations.isEmpty ? l10n.workspaceUsersEmpty : null;
         if (_selectedTab == _RailTab.chats) {
@@ -2778,6 +3025,7 @@ class _ChatSection extends StatefulWidget {
     required this.onSend,
     required this.onSendEmojiGame,
     required this.onSendMedia,
+    required this.onSendVoice,
   });
 
   final _Conversation? conversation;
@@ -2791,6 +3039,7 @@ class _ChatSection extends StatefulWidget {
   final ValueChanged<String>? onSend;
   final ValueChanged<_EmojiGameSelection>? onSendEmojiGame;
   final Future<bool> Function(_SelectedChatMedia media)? onSendMedia;
+  final Future<bool> Function(_SelectedVoiceRecording voice)? onSendVoice;
 
   @override
   State<_ChatSection> createState() => _ChatSectionState();
@@ -2950,6 +3199,7 @@ class _ChatSectionState extends State<_ChatSection> {
               onSend: widget.onSend,
               onSendEmojiGame: widget.onSendEmojiGame,
               onSendMedia: widget.onSendMedia,
+              onSendVoice: widget.onSendVoice,
             ),
           ),
         ],
@@ -3549,6 +3799,9 @@ class _MediaMessagePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (media.isVoice) {
+      return _VoiceMessagePreview(media: media);
+    }
     final source = media.previewSource;
     final size = media.previewSize;
     return ClipRRect(
@@ -3608,6 +3861,132 @@ class _MediaMessagePreview extends StatelessWidget {
       context: context,
       barrierColor: const Color(0xdd0b141a),
       builder: (_) => _MediaViewerDialog(media: media),
+    );
+  }
+}
+
+class _VoiceMessagePreview extends StatefulWidget {
+  const _VoiceMessagePreview({required this.media});
+
+  final _ChatMedia media;
+
+  @override
+  State<_VoiceMessagePreview> createState() => _VoiceMessagePreviewState();
+}
+
+class _VoiceMessagePreviewState extends State<_VoiceMessagePreview> {
+  late final Player _player;
+  StreamSubscription<bool>? _playingSubscription;
+  StreamSubscription<Duration>? _positionSubscription;
+  StreamSubscription<Duration>? _durationSubscription;
+  bool _opened = false;
+  bool _playing = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = Player();
+    _playingSubscription = _player.stream.playing.listen((playing) {
+      if (mounted) {
+        setState(() => _playing = playing);
+      }
+    });
+    _positionSubscription = _player.stream.position.listen((position) {
+      if (mounted) {
+        setState(() => _position = position);
+      }
+    });
+    _durationSubscription = _player.stream.duration.listen((duration) {
+      if (mounted) {
+        setState(() => _duration = duration);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_playingSubscription?.cancel());
+    unawaited(_positionSubscription?.cancel());
+    unawaited(_durationSubscription?.cancel());
+    unawaited(_player.dispose());
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    final source = widget.media.viewerSource;
+    if (source.isEmpty) {
+      return;
+    }
+    if (!_opened) {
+      await _player.open(Media(source), play: false);
+      _opened = true;
+    }
+    if (_playing) {
+      await _player.pause();
+      return;
+    }
+    final duration = _duration;
+    if (duration > Duration.zero && _position >= duration) {
+      await _player.seek(Duration.zero);
+    }
+    await _player.play();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final source = widget.media.viewerSource;
+    final fallbackSeconds = widget.media.durationSeconds ?? 0;
+    final progress = _duration.inMilliseconds <= 0
+        ? 0.0
+        : (_position.inMilliseconds / _duration.inMilliseconds).clamp(0.0, 1.0);
+    return SizedBox(
+      width: widget.media.previewSize.width,
+      height: widget.media.previewSize.height,
+      child: Row(
+        children: [
+          IconButton.filled(
+            style: IconButton.styleFrom(
+              backgroundColor: source.isEmpty
+                  ? const Color(0xffcfd8dc)
+                  : const Color(0xff1da855),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: source.isEmpty ? null : _toggle,
+            icon: Icon(
+              _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 3,
+                  backgroundColor: const Color(0xffd9e1e5),
+                  color: const Color(0xff1da855),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _duration > Duration.zero
+                      ? _formatVoiceDuration(_duration.inSeconds)
+                      : _formatVoiceDuration(fallbackSeconds),
+                  style: const TextStyle(
+                    color: Color(0xff667781),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3878,6 +4257,7 @@ class _MessageInput extends StatefulWidget {
     required this.onSend,
     required this.onSendEmojiGame,
     required this.onSendMedia,
+    required this.onSendVoice,
     super.key,
   });
 
@@ -3887,6 +4267,7 @@ class _MessageInput extends StatefulWidget {
   final ValueChanged<String>? onSend;
   final ValueChanged<_EmojiGameSelection>? onSendEmojiGame;
   final Future<bool> Function(_SelectedChatMedia media)? onSendMedia;
+  final Future<bool> Function(_SelectedVoiceRecording voice)? onSendVoice;
 
   @override
   State<_MessageInput> createState() => _MessageInputState();
@@ -3895,11 +4276,18 @@ class _MessageInput extends StatefulWidget {
 class _MessageInputState extends State<_MessageInput> {
   late final TextEditingController _controller;
   late final FocusNode _focusNode;
+  final AudioRecorder _voiceRecorder = AudioRecorder();
+  final Stopwatch _voiceStopwatch = Stopwatch();
   OverlayEntry? _emojiOverlayEntry;
   OverlayEntry? _attachOverlayEntry;
   Timer? _emojiCloseTimer;
+  Timer? _voiceTimer;
   bool _emojiButtonHovered = false;
   bool _emojiPanelHovered = false;
+  bool _isVoiceRecording = false;
+  bool _isVoiceSending = false;
+  int _voiceSeconds = 0;
+  String? _voicePath;
   final Random _random = Random();
 
   @override
@@ -3914,12 +4302,20 @@ class _MessageInputState extends State<_MessageInput> {
     _hideEmojiPanel(notify: false);
     _hideAttachmentMenu(notify: false);
     _emojiCloseTimer?.cancel();
+    _voiceTimer?.cancel();
+    if (_isVoiceRecording) {
+      unawaited(_voiceRecorder.cancel());
+    }
+    unawaited(_voiceRecorder.dispose());
     _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   void _send() {
+    if (_isVoiceRecording || _isVoiceSending) {
+      return;
+    }
     final value = _controller.text;
     if (value.trim().isEmpty || widget.onSend == null) {
       return;
@@ -3929,6 +4325,187 @@ class _MessageInputState extends State<_MessageInput> {
     widget.onChanged('');
     setState(() {});
     _focusNode.requestFocus();
+  }
+
+  Future<void> _toggleVoiceRecording() async {
+    if (_isVoiceSending || widget.onSendVoice == null) {
+      return;
+    }
+    if (_isVoiceRecording) {
+      await _stopAndSendVoice();
+      return;
+    }
+    await _startVoiceRecording();
+  }
+
+  Future<void> _startVoiceRecording() async {
+    _hideEmojiPanel();
+    _hideAttachmentMenu();
+    _focusNode.unfocus();
+    final hasPermission = await _voiceRecorder.hasPermission();
+    if (!mounted) {
+      return;
+    }
+    if (!hasPermission) {
+      _showInputNotice(AppLocalizations.of(context).voicePermissionDenied);
+      return;
+    }
+    final previousPath = _voicePath;
+    if (previousPath != null && previousPath.isNotEmpty) {
+      unawaited(
+        File(previousPath).delete().catchError((_) => File(previousPath)),
+      );
+    }
+    final dataDir = await DesktopDataDirectory.resolve();
+    final dir = Directory(
+      '${dataDir.path}${Platform.pathSeparator}cache${Platform.pathSeparator}voice_records',
+    );
+    await dir.create(recursive: true);
+    final path =
+        '${dir.path}${Platform.pathSeparator}bbp_voice_${DateTime.now().microsecondsSinceEpoch}.wav';
+    debugPrint('[CHAT_OPS][VOICE][INLINE_RECORD_PATH] $path');
+    try {
+      await _voiceRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          numChannels: 1,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+      if (!mounted) {
+        return;
+      }
+      _voiceStopwatch
+        ..reset()
+        ..start();
+      _voiceTimer?.cancel();
+      _voiceTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        if (!mounted) {
+          return;
+        }
+        final next = _voiceStopwatch.elapsed.inSeconds;
+        if (next != _voiceSeconds) {
+          setState(() => _voiceSeconds = next);
+        }
+        if (next >= _maxVoiceRecordSeconds) {
+          unawaited(_stopAndSendVoice());
+        }
+      });
+      setState(() {
+        _voicePath = path;
+        _voiceSeconds = 0;
+        _isVoiceRecording = true;
+      });
+    } catch (_) {
+      if (mounted) {
+        _showInputNotice(AppLocalizations.of(context).voiceRecordFailed);
+      }
+    }
+  }
+
+  Future<void> _stopAndSendVoice() async {
+    if (!_isVoiceRecording || _isVoiceSending) {
+      return;
+    }
+    _voiceTimer?.cancel();
+    _voiceStopwatch.stop();
+    final elapsed = _voiceStopwatch.elapsed;
+    final fallbackPath = _voicePath;
+    setState(() {
+      _isVoiceRecording = false;
+      _isVoiceSending = true;
+      _voiceSeconds = max(1, (elapsed.inMilliseconds / 1000).ceil());
+    });
+    try {
+      debugPrint(
+        '[CHAT_OPS][VOICE][INLINE_STAGE] stop_start path=$fallbackPath '
+        'elapsedMs=${elapsed.inMilliseconds}',
+      );
+      final stoppedPath = await _voiceRecorder.stop().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          debugPrint(
+            '[CHAT_OPS][VOICE][INLINE_STOP_TIMEOUT] fallbackPath=$fallbackPath',
+          );
+          return fallbackPath;
+        },
+      );
+      final path = (stoppedPath?.trim().isNotEmpty == true)
+          ? stoppedPath
+          : fallbackPath;
+      debugPrint('[CHAT_OPS][VOICE][INLINE_STAGE] stop_done path=$path');
+      final ready = await _voiceInputFileReady(path);
+      debugPrint(
+        '[CHAT_OPS][VOICE][INLINE_SEND] path=$path '
+        'elapsedMs=${elapsed.inMilliseconds} exists=${ready.exists} '
+        'size=${ready.fileSize}',
+      );
+      if (path == null ||
+          path.trim().isEmpty ||
+          !ready.exists ||
+          widget.onSendVoice == null) {
+        throw const ChatMediaUploadException('Voice recording failed.');
+      }
+      final voice = _SelectedVoiceRecording(
+        path: path,
+        fileName: path.split(Platform.pathSeparator).last,
+        durationSeconds: max(1, (elapsed.inMilliseconds / 1000).ceil()),
+        fileSizeBytes: ready.fileSize,
+      );
+      debugPrint(
+        '[CHAT_OPS][VOICE][INLINE_STAGE] send_start path=${voice.path} '
+        'size=${voice.fileSizeBytes} duration=${voice.durationSeconds}',
+      );
+      final success = await widget.onSendVoice!(voice).timeout(
+        const Duration(seconds: 25),
+        onTimeout: () {
+          throw const ChatMediaUploadException('Voice send timeout.');
+        },
+      );
+      debugPrint('[CHAT_OPS][VOICE][INLINE_STAGE] send_done success=$success');
+      if (!mounted) {
+        return;
+      }
+      if (!success) {
+        setState(() => _isVoiceSending = false);
+        return;
+      }
+      setState(() {
+        _isVoiceSending = false;
+        _voicePath = null;
+        _voiceSeconds = 0;
+      });
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      debugPrint('[CHAT_OPS][VOICE][INLINE_SEND_FAILED] $error');
+      setState(() => _isVoiceSending = false);
+      _showInputNotice(AppLocalizations.of(context).voiceRecordFailed);
+    }
+  }
+
+  Future<({bool exists, int fileSize})> _voiceInputFileReady(
+    String? path,
+  ) async {
+    if (path == null || path.trim().isEmpty) {
+      return (exists: false, fileSize: 0);
+    }
+    final file = File(path);
+    for (var attempt = 0; attempt < 50; attempt += 1) {
+      final exists = await file.exists();
+      if (exists) {
+        final fileSize = await file.length();
+        if (fileSize > 0) {
+          return (exists: true, fileSize: fileSize);
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    final exists = await file.exists();
+    final fileSize = exists ? await file.length() : 0;
+    return (exists: exists && fileSize > 0, fileSize: fileSize);
   }
 
   void _toggleEmojiPanel() {
@@ -4240,6 +4817,7 @@ class _MessageInputState extends State<_MessageInput> {
 
   @override
   Widget build(BuildContext context) {
+    final hasText = _controller.text.trim().isNotEmpty;
     return Container(
       height: 80,
       color: const Color(0xfff6f6f6),
@@ -4270,54 +4848,120 @@ class _MessageInputState extends State<_MessageInput> {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: Shortcuts(
-                shortcuts: const {
-                  SingleActivator(LogicalKeyboardKey.enter):
-                      _SendMessageIntent(),
-                },
-                child: Actions(
-                  actions: {
-                    _SendMessageIntent: CallbackAction<_SendMessageIntent>(
-                      onInvoke: (_) {
-                        _send();
-                        return null;
-                      },
-                    ),
-                  },
-                  child: TextField(
-                    controller: _controller,
-                    focusNode: _focusNode,
-                    inputFormatters: [
-                      LengthLimitingTextInputFormatter(_maxChatMessageLength),
-                    ],
-                    keyboardType: TextInputType.multiline,
-                    maxLines: null,
-                    onChanged: (value) {
-                      widget.onChanged(value);
-                      setState(() {});
+              child: Stack(
+                children: [
+                  Shortcuts(
+                    shortcuts: const {
+                      SingleActivator(LogicalKeyboardKey.enter):
+                          _SendMessageIntent(),
                     },
-                    textInputAction: TextInputAction.newline,
-                    cursorColor: const Color(0xff1da855),
-                    style: const TextStyle(
-                      color: Color(0xff111b21),
-                      fontSize: 14,
-                      height: 24 / 14,
-                    ),
-                    decoration:
-                        const InputDecoration(
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.fromLTRB(24, 12, 24, 12),
-                        ).copyWith(
-                          hintText: widget.hintText,
-                          hintStyle: const TextStyle(
-                            color: Color(0xff8f8f8f),
-                            fontSize: 14,
-                            height: 24 / 14,
-                          ),
+                    child: Actions(
+                      actions: {
+                        _SendMessageIntent: CallbackAction<_SendMessageIntent>(
+                          onInvoke: (_) {
+                            _send();
+                            return null;
+                          },
                         ),
+                      },
+                      child: TextField(
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        enabled: !_isVoiceRecording && !_isVoiceSending,
+                        inputFormatters: [
+                          LengthLimitingTextInputFormatter(
+                            _maxChatMessageLength,
+                          ),
+                        ],
+                        keyboardType: TextInputType.multiline,
+                        maxLines: null,
+                        onChanged: (value) {
+                          widget.onChanged(value);
+                          setState(() {});
+                        },
+                        textInputAction: TextInputAction.newline,
+                        cursorColor: const Color(0xff1da855),
+                        style: const TextStyle(
+                          color: Color(0xff111b21),
+                          fontSize: 14,
+                          height: 24 / 14,
+                        ),
+                        decoration:
+                            const InputDecoration(
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding: EdgeInsets.fromLTRB(
+                                24,
+                                12,
+                                24,
+                                12,
+                              ),
+                            ).copyWith(
+                              hintText: widget.hintText,
+                              hintStyle: const TextStyle(
+                                color: Color(0xff8f8f8f),
+                                fontSize: 14,
+                                height: 24 / 14,
+                              ),
+                            ),
+                      ),
+                    ),
                   ),
-                ),
+                  if (_isVoiceRecording || _isVoiceSending)
+                    Positioned.fill(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 22),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: _isVoiceSending
+                                    ? const Color(0xff1da855)
+                                    : const Color(0xffef4444),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _isVoiceSending
+                                  ? AppLocalizations.of(context).mediaSending
+                                  : _formatVoiceDuration(_voiceSeconds),
+                              style: TextStyle(
+                                color: _isVoiceSending
+                                    ? const Color(0xff1da855)
+                                    : const Color(0xffef4444),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _isVoiceSending
+                                    ? '[Voice]'
+                                    : AppLocalizations.of(
+                                        context,
+                                      ).voiceRecordingHint,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xff667781),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -4339,15 +4983,38 @@ class _MessageInputState extends State<_MessageInput> {
           ),
           const SizedBox(width: 8),
           IconButton(
-            tooltip: widget.hintText,
-            onPressed: widget.onSend == null ? null : _send,
-            icon: Icon(
-              _controller.text.trim().isEmpty
-                  ? Icons.mic_rounded
-                  : Icons.send_rounded,
-              color: const Color(0xff54656f),
-              size: 24,
-            ),
+            tooltip: _isVoiceRecording
+                ? AppLocalizations.of(context).mediaSend
+                : hasText
+                ? widget.hintText
+                : 'Voice',
+            onPressed: _isVoiceSending
+                ? null
+                : _isVoiceRecording
+                ? _stopAndSendVoice
+                : hasText
+                ? (widget.onSend == null ? null : _send)
+                : (widget.onSendVoice == null ? null : _toggleVoiceRecording),
+            icon: _isVoiceSending
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: Color(0xff1da855),
+                    ),
+                  )
+                : Icon(
+                    _isVoiceRecording
+                        ? Icons.send_rounded
+                        : hasText
+                        ? Icons.send_rounded
+                        : Icons.mic_rounded,
+                    color: _isVoiceRecording
+                        ? const Color(0xff1da855)
+                        : const Color(0xff54656f),
+                    size: 24,
+                  ),
           ),
         ],
       ),
@@ -4357,6 +5024,427 @@ class _MessageInputState extends State<_MessageInput> {
 
 class _SendMessageIntent extends Intent {
   const _SendMessageIntent();
+}
+
+enum _VoiceRecordStatus { idle, recording, recorded, sending }
+
+class _VoiceRecordDialog extends StatefulWidget {
+  const _VoiceRecordDialog({
+    required this.onSend,
+    required this.onSendSucceeded,
+  });
+
+  final Future<bool> Function(_SelectedVoiceRecording voice)? onSend;
+  final VoidCallback onSendSucceeded;
+
+  @override
+  State<_VoiceRecordDialog> createState() => _VoiceRecordDialogState();
+}
+
+class _VoiceRecordDialogState extends State<_VoiceRecordDialog> {
+  final AudioRecorder _recorder = AudioRecorder();
+  final Stopwatch _recordStopwatch = Stopwatch();
+  _VoiceRecordStatus _status = _VoiceRecordStatus.idle;
+  Timer? _timer;
+  int _seconds = 0;
+  String? _path;
+  String? _error;
+  bool _stopping = false;
+  bool _voiceReady = false;
+  Future<String?>? _stopFuture;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    unawaited(_recorder.dispose());
+    super.dispose();
+  }
+
+  Future<void> _startRecording() async {
+    if (_status == _VoiceRecordStatus.recording) {
+      await _stopRecording();
+      return;
+    }
+    if (_status == _VoiceRecordStatus.recorded) {
+      final previousPath = _path;
+      if (previousPath != null && previousPath.isNotEmpty) {
+        unawaited(
+          File(previousPath).delete().catchError((_) => File(previousPath)),
+        );
+      }
+    }
+    setState(() {
+      _error = null;
+      _seconds = 0;
+      _path = null;
+      _voiceReady = false;
+      _stopFuture = null;
+    });
+    _recordStopwatch
+      ..reset()
+      ..stop();
+    final hasPermission = await _recorder.hasPermission();
+    if (!mounted) {
+      return;
+    }
+    if (!hasPermission) {
+      setState(
+        () => _error = AppLocalizations.of(context).voicePermissionDenied,
+      );
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final path =
+        '${dir.path}${Platform.pathSeparator}bbp_voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+    try {
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          numChannels: 1,
+          bitRate: 64000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _status = _VoiceRecordStatus.recording;
+        _path = path;
+      });
+      _recordStopwatch.start();
+      _timer?.cancel();
+      _timer = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        if (!mounted) {
+          return;
+        }
+        final next = _recordStopwatch.elapsed.inSeconds;
+        if (next != _seconds) {
+          setState(() => _seconds = next);
+        }
+        if (next >= _maxVoiceRecordSeconds) {
+          unawaited(_stopRecording());
+        }
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = AppLocalizations.of(context).voiceRecordFailed);
+      }
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (_stopping) {
+      return;
+    }
+    _timer?.cancel();
+    if (_status != _VoiceRecordStatus.recording) {
+      return;
+    }
+    _recordStopwatch.stop();
+    final elapsed = _recordStopwatch.elapsed;
+    final fallbackPath = _path;
+    if (fallbackPath == null || fallbackPath.trim().isEmpty) {
+      setState(() {
+        _status = _VoiceRecordStatus.idle;
+        _stopping = false;
+        _voiceReady = false;
+        _error = AppLocalizations.of(context).voiceRecordFailed;
+      });
+      return;
+    }
+    _markVoiceReady(fallbackPath, elapsed);
+    final stopFuture = _finalizeRecording(fallbackPath, elapsed);
+    _stopFuture = stopFuture;
+    unawaited(stopFuture);
+  }
+
+  Future<String?> _finalizeRecording(
+    String fallbackPath,
+    Duration elapsed,
+  ) async {
+    try {
+      final stoppedPath = await _recorder.stop().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          debugPrint('[CHAT_OPS][VOICE][STOP_TIMEOUT] fallbackPath=$_path');
+          return null;
+        },
+      );
+      if (!mounted) {
+        return stoppedPath ?? fallbackPath;
+      }
+      final path = stoppedPath ?? _path;
+      if (path != null && path.trim().isNotEmpty && path != _path) {
+        _path = path;
+      }
+      debugPrint(
+        '[CHAT_OPS][VOICE][STOP] path=$path elapsedMs=${elapsed.inMilliseconds} '
+        'finalized=true',
+      );
+      return path ?? fallbackPath;
+    } catch (error) {
+      if (mounted) {
+        debugPrint(
+          '[CHAT_OPS][VOICE][STOP_ERROR] error=$error '
+          'fallbackPath=$fallbackPath',
+        );
+      }
+      return fallbackPath;
+    }
+  }
+
+  Future<({bool exists, int fileSize})> _voiceFileReady(String? path) async {
+    if (path == null || path.trim().isEmpty) {
+      return (exists: false, fileSize: 0);
+    }
+    final file = File(path);
+    for (var attempt = 0; attempt < 8; attempt += 1) {
+      final exists = await file.exists();
+      if (exists) {
+        final fileSize = await file.length();
+        if (fileSize > 0) {
+          return (exists: true, fileSize: fileSize);
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    }
+    final exists = await file.exists();
+    final fileSize = exists ? await file.length() : 0;
+    return (exists: exists && fileSize > 0, fileSize: fileSize);
+  }
+
+  void _markVoiceReady(String path, Duration elapsed) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _status = _VoiceRecordStatus.recorded;
+      _stopping = false;
+      _voiceReady = true;
+      _path = path;
+      _seconds = max(1, (elapsed.inMilliseconds / 1000).ceil());
+      _error = null;
+    });
+  }
+
+  Future<void> _cancelRecording() async {
+    _timer?.cancel();
+    _recordStopwatch
+      ..reset()
+      ..stop();
+    if (_status == _VoiceRecordStatus.recording) {
+      await _recorder.cancel();
+    }
+    final path = _path;
+    if (path != null && path.isNotEmpty) {
+      unawaited(File(path).delete().catchError((_) => File(path)));
+    }
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _send() async {
+    final onSend = widget.onSend;
+    var path = _path;
+    if (!_voiceReady || onSend == null || path == null || path.trim().isEmpty) {
+      return;
+    }
+    setState(() => _status = _VoiceRecordStatus.sending);
+    final finalizedPath = await _stopFuture?.timeout(
+      const Duration(seconds: 2),
+      onTimeout: () => path,
+    );
+    path = finalizedPath?.trim().isNotEmpty == true ? finalizedPath : path;
+    final ready = await _voiceFileReady(path);
+    final sendPath = path;
+    if (!ready.exists || sendPath == null || sendPath.trim().isEmpty) {
+      if (mounted) {
+        setState(() {
+          _status = _VoiceRecordStatus.recorded;
+          _error = AppLocalizations.of(context).voiceRecordFailed;
+        });
+      }
+      return;
+    }
+    final success = await onSend(
+      _SelectedVoiceRecording(
+        path: sendPath,
+        fileName: sendPath.split(Platform.pathSeparator).last,
+        durationSeconds: max(1, _seconds),
+        fileSizeBytes: ready.fileSize,
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    if (success) {
+      widget.onSendSucceeded();
+      return;
+    }
+    setState(() => _status = _VoiceRecordStatus.recorded);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final isRecording = _status == _VoiceRecordStatus.recording;
+    final isRecorded = _status == _VoiceRecordStatus.recorded;
+    final isSending = _status == _VoiceRecordStatus.sending;
+    final canOperate = !isSending && !_stopping;
+    final canSend =
+        canOperate && _voiceReady && _path?.trim().isNotEmpty == true;
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: SizedBox(
+        width: 360,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 24, 28, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: l10n.close,
+                    onPressed: canOperate ? _cancelRecording : null,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                  Expanded(
+                    child: Text(
+                      l10n.voiceRecordTitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xff111b21),
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 48),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: 92,
+                height: 92,
+                decoration: BoxDecoration(
+                  color:
+                      (isRecording
+                              ? const Color(0xffef4444)
+                              : const Color(0xff1da855))
+                          .withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  isRecorded ? Icons.graphic_eq_rounded : Icons.mic_rounded,
+                  color: isRecording
+                      ? const Color(0xffef4444)
+                      : const Color(0xff1da855),
+                  size: 42,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                _formatVoiceDuration(_seconds),
+                style: const TextStyle(
+                  color: Color(0xff111b21),
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 38,
+                child: Center(
+                  child: Text(
+                    isRecording
+                        ? l10n.voiceRecordingHint
+                        : isRecorded
+                        ? l10n.voiceRecordReady
+                        : l10n.voiceRecordHint,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xff667781),
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xffd92d20),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: isRecording
+                            ? const Color(0xffef4444)
+                            : const Color(0xff1da855),
+                        side: BorderSide(
+                          color: isRecording
+                              ? const Color(0xffef4444)
+                              : const Color(0xff1da855),
+                        ),
+                      ),
+                      onPressed: canOperate ? _startRecording : null,
+                      child: Text(
+                        isRecording
+                            ? l10n.voiceStop
+                            : isRecorded
+                            ? l10n.voiceRecordAgain
+                            : l10n.voiceStart,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        disabledBackgroundColor: const Color(0xffd6dadd),
+                        disabledForegroundColor: const Color(0xff8c969d),
+                        backgroundColor: const Color(0xff1da855),
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: canSend ? _send : null,
+                      child: isSending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.4,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Text(l10n.mediaSend),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _MediaPreviewDialog extends StatefulWidget {
@@ -5356,6 +6444,7 @@ class _ChatMedia {
     this.localPath,
     this.width,
     this.height,
+    this.durationSeconds,
   });
 
   final int mediaType;
@@ -5364,10 +6453,15 @@ class _ChatMedia {
   final String? localPath;
   final int? width;
   final int? height;
+  final int? durationSeconds;
 
   bool get isVideo => mediaType == 3;
+  bool get isVoice => mediaType == 4;
 
   Size get previewSize {
+    if (isVoice) {
+      return const Size(220, 48);
+    }
     final mediaWidth = width ?? 0;
     final mediaHeight = height ?? 0;
     if (mediaWidth <= 0 || mediaHeight <= 0) {
@@ -5405,7 +6499,7 @@ class _ChatMedia {
       }
     }
     final media = mediaUrl?.trim() ?? '';
-    if (media.isNotEmpty && !isVideo) {
+    if (media.isNotEmpty && !isVideo && !isVoice) {
       return media;
     }
     return previewSource;
@@ -5433,7 +6527,7 @@ class _ChatMedia {
     }
     final payload = _mediaPayloadFromJson(message.msgData);
     final mediaType = _chatMediaInt(payload?['mediaType']) ?? 0;
-    if (mediaType != 2 && mediaType != 3) {
+    if (mediaType != 2 && mediaType != 3 && mediaType != 4) {
       return null;
     }
     return _ChatMedia(
@@ -5442,6 +6536,7 @@ class _ChatMedia {
       mediaCoverUrl: payload?['mediaCover']?.toString(),
       width: _chatMediaInt(payload?['width']),
       height: _chatMediaInt(payload?['height']),
+      durationSeconds: _chatMediaInt(payload?['duration']),
       localPath: message.localMediaPath?.trim().isNotEmpty == true
           ? message.localMediaPath
           : payload?['localUrl']?.toString(),
@@ -5457,6 +6552,13 @@ int? _chatMediaInt(Object? value) {
     return value.toInt();
   }
   return int.tryParse(value?.toString() ?? '');
+}
+
+String _formatVoiceDuration(int seconds) {
+  final safeSeconds = max(0, seconds);
+  final minutes = safeSeconds ~/ 60;
+  final remainingSeconds = safeSeconds % 60;
+  return '$minutes:${remainingSeconds.toString().padLeft(2, '0')}';
 }
 
 Map<String, dynamic>? _mediaPayloadFromJson(String? rawValue) {
@@ -5668,6 +6770,7 @@ class _IncomingSocketMessage {
     return switch (mediaType) {
       2 => '[Photo]',
       3 => '[Video]',
+      4 => '[Voice]',
       _ => '',
     };
   }

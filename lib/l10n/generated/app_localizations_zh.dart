@@ -223,6 +223,36 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaSendPending => '媒體發送暫未接入。';
 
   @override
+  String get voiceRecordTitle => '語音訊息';
+
+  @override
+  String get voiceRecordHint => '點擊開始後說話，再發送。最多 60 秒。';
+
+  @override
+  String get voiceRecordingHint => '錄音中...完成後點擊停止。';
+
+  @override
+  String get voiceRecordReady => '語音已準備好，可以發送或重新錄製。';
+
+  @override
+  String get voiceRecordAgain => '重新錄製';
+
+  @override
+  String get voiceStart => '開始';
+
+  @override
+  String get voiceStop => '停止';
+
+  @override
+  String get voicePermissionDenied => '需要麥克風權限才能錄製語音。';
+
+  @override
+  String get voiceTooShort => '語音訊息太短。';
+
+  @override
+  String get voiceRecordFailed => '語音錄製失敗，請重試。';
+
+  @override
   String get workspaceUserOnline => '在線';
 
   @override
@@ -494,6 +524,36 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get mediaSendPending => '媒體發送暫未接入。';
+
+  @override
+  String get voiceRecordTitle => '語音訊息';
+
+  @override
+  String get voiceRecordHint => '點擊開始後說話，再發送。最多 60 秒。';
+
+  @override
+  String get voiceRecordingHint => '錄音中...完成後點擊停止。';
+
+  @override
+  String get voiceRecordReady => '語音已準備好，可以發送或重新錄製。';
+
+  @override
+  String get voiceRecordAgain => '重新錄製';
+
+  @override
+  String get voiceStart => '開始';
+
+  @override
+  String get voiceStop => '停止';
+
+  @override
+  String get voicePermissionDenied => '需要麥克風權限才能錄製語音。';
+
+  @override
+  String get voiceTooShort => '語音訊息太短。';
+
+  @override
+  String get voiceRecordFailed => '語音錄製失敗，請重試。';
 
   @override
   String get workspaceUserOnline => '在線';

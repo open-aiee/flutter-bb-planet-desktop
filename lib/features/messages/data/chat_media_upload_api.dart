@@ -60,6 +60,21 @@ class ChatMediaUploadApi {
     );
   }
 
+  Future<String> uploadTempVoice({
+    required String path,
+    required String certificate,
+    required String deviceId,
+    required String lang,
+  }) {
+    return _uploadTempMedia(
+      path: path,
+      endpoint: '/file/upload/temp/audio',
+      certificate: certificate,
+      deviceId: deviceId,
+      lang: lang,
+    );
+  }
+
   Future<String> _uploadTempMedia({
     required String path,
     required String endpoint,

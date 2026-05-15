@@ -234,6 +234,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mediaSendPending => 'Media sending is not connected yet.';
 
   @override
+  String get voiceRecordTitle => 'Voice message';
+
+  @override
+  String get voiceRecordHint =>
+      'Click start, speak, then send. Up to 60 seconds.';
+
+  @override
+  String get voiceRecordingHint => 'Recording... click stop when finished.';
+
+  @override
+  String get voiceRecordReady => 'Voice is ready. Send it or record again.';
+
+  @override
+  String get voiceRecordAgain => 'Record again';
+
+  @override
+  String get voiceStart => 'Start';
+
+  @override
+  String get voiceStop => 'Stop';
+
+  @override
+  String get voicePermissionDenied =>
+      'Microphone permission is required to record voice.';
+
+  @override
+  String get voiceTooShort => 'Voice message is too short.';
+
+  @override
+  String get voiceRecordFailed => 'Voice recording failed. Please try again.';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override

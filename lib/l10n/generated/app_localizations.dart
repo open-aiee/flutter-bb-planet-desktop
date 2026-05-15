@@ -521,6 +521,66 @@ abstract class AppLocalizations {
   /// **'Media sending is not connected yet.'**
   String get mediaSendPending;
 
+  /// No description provided for @voiceRecordTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice message'**
+  String get voiceRecordTitle;
+
+  /// No description provided for @voiceRecordHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Click start, speak, then send. Up to 60 seconds.'**
+  String get voiceRecordHint;
+
+  /// No description provided for @voiceRecordingHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording... click stop when finished.'**
+  String get voiceRecordingHint;
+
+  /// No description provided for @voiceRecordReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice is ready. Send it or record again.'**
+  String get voiceRecordReady;
+
+  /// No description provided for @voiceRecordAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Record again'**
+  String get voiceRecordAgain;
+
+  /// No description provided for @voiceStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start'**
+  String get voiceStart;
+
+  /// No description provided for @voiceStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop'**
+  String get voiceStop;
+
+  /// No description provided for @voicePermissionDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Microphone permission is required to record voice.'**
+  String get voicePermissionDenied;
+
+  /// No description provided for @voiceTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice message is too short.'**
+  String get voiceTooShort;
+
+  /// No description provided for @voiceRecordFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice recording failed. Please try again.'**
+  String get voiceRecordFailed;
+
   /// No description provided for @workspaceUserOnline.
   ///
   /// In en, this message translates to:
