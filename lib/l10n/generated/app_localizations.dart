@@ -581,6 +581,174 @@ abstract class AppLocalizations {
   /// **'Voice recording failed. Please try again.'**
   String get voiceRecordFailed;
 
+  /// No description provided for @voiceCancelRecording.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel recording'**
+  String get voiceCancelRecording;
+
+  /// No description provided for @voiceInputTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice'**
+  String get voiceInputTooltip;
+
+  /// No description provided for @attachmentTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Attach'**
+  String get attachmentTooltip;
+
+  /// No description provided for @chatInputWriteMessageHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a message...'**
+  String get chatInputWriteMessageHint;
+
+  /// No description provided for @chatOpenFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to open chat.'**
+  String get chatOpenFailed;
+
+  /// No description provided for @chatPrivateAccountBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'The other party has opened a private account.'**
+  String get chatPrivateAccountBlocked;
+
+  /// No description provided for @chatYouBlockedPeer.
+  ///
+  /// In en, this message translates to:
+  /// **'You have blocked the other party.'**
+  String get chatYouBlockedPeer;
+
+  /// No description provided for @chatYouWereBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'You have been blocked.'**
+  String get chatYouWereBlocked;
+
+  /// No description provided for @chatPeerClosedPrivateChat.
+  ///
+  /// In en, this message translates to:
+  /// **'The other party closed the private chat.'**
+  String get chatPeerClosedPrivateChat;
+
+  /// No description provided for @dateToday.
+  ///
+  /// In en, this message translates to:
+  /// **'TODAY'**
+  String get dateToday;
+
+  /// No description provided for @dateYesterday.
+  ///
+  /// In en, this message translates to:
+  /// **'YESTERDAY'**
+  String get dateYesterday;
+
+  /// No description provided for @contactInfoBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get contactInfoBack;
+
+  /// No description provided for @contactInfoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Info'**
+  String get contactInfoTitle;
+
+  /// No description provided for @contactInfoMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get contactInfoMessage;
+
+  /// No description provided for @contactInfoCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Call'**
+  String get contactInfoCall;
+
+  /// No description provided for @contactInfoMore.
+  ///
+  /// In en, this message translates to:
+  /// **'More'**
+  String get contactInfoMore;
+
+  /// No description provided for @contactInfoUsername.
+  ///
+  /// In en, this message translates to:
+  /// **'username'**
+  String get contactInfoUsername;
+
+  /// No description provided for @contactInfoLastSeenRecently.
+  ///
+  /// In en, this message translates to:
+  /// **'last seen recently'**
+  String get contactInfoLastSeenRecently;
+
+  /// No description provided for @contactInfoAddContact.
+  ///
+  /// In en, this message translates to:
+  /// **'Add Contact'**
+  String get contactInfoAddContact;
+
+  /// No description provided for @contactInfoBlockUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Block User'**
+  String get contactInfoBlockUser;
+
+  /// No description provided for @contactInfoMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'Media'**
+  String get contactInfoMedia;
+
+  /// No description provided for @contactInfoNoMedia.
+  ///
+  /// In en, this message translates to:
+  /// **'No media yet'**
+  String get contactInfoNoMedia;
+
+  /// No description provided for @loginQrTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'To use Desktop on your computer:'**
+  String get loginQrTitle;
+
+  /// No description provided for @loginQrStepOpenApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Open App on your phone'**
+  String get loginQrStepOpenApp;
+
+  /// No description provided for @loginQrStepFindQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Find the top right corner of my page'**
+  String get loginQrStepFindQr;
+
+  /// No description provided for @loginQrStepTapQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap on QR'**
+  String get loginQrStepTapQr;
+
+  /// No description provided for @loginQrStepScanCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Point your phone to this screen to capture the code'**
+  String get loginQrStepScanCode;
+
+  /// No description provided for @loginQrScanToSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan to sign in'**
+  String get loginQrScanToSignIn;
+
   /// No description provided for @workspaceUserOnline.
   ///
   /// In en, this message translates to:

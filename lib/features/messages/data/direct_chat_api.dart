@@ -39,7 +39,7 @@ class DirectChatApi {
     try {
       response = await _dio.post<Map<String, dynamic>>(
         '/chat/start',
-        data: {'toUserId': peerUserId, 'chatSourceType': 1},
+        data: {'toUserId': peerUserId, 'chatSourceType': 7},
         options: Options(
           headers: {
             'Certificate': certificate,
@@ -68,9 +68,21 @@ class DirectChatApi {
 }
 
 class DirectChatStartResult {
-  const DirectChatStartResult({required this.roomId});
+  const DirectChatStartResult({
+    required this.roomId,
+    required this.fromUserId,
+    required this.toUserId,
+    required this.personalChatStatus,
+    required this.deductStatus,
+    required this.chatFee,
+  });
 
   final int roomId;
+  final int fromUserId;
+  final int toUserId;
+  final int personalChatStatus;
+  final int deductStatus;
+  final String chatFee;
 
   factory DirectChatStartResult.fromJson(Map<String, dynamic> json) {
     final value = json['roomId'];
@@ -78,7 +90,26 @@ class DirectChatStartResult {
     if (roomId == null || roomId <= 0) {
       throw const DirectChatException('Unable to open chat.');
     }
-    return DirectChatStartResult(roomId: roomId);
+    return DirectChatStartResult(
+      roomId: roomId,
+      fromUserId: _userIdOf(json['fromUser']),
+      toUserId: _userIdOf(json['toUser']),
+      personalChatStatus: _intOf(json['personalChatStatus']),
+      deductStatus: _intOf(json['deductStatus']),
+      chatFee: json['chatFee']?.toString() ?? '',
+    );
+  }
+
+  static int _userIdOf(Object? value) {
+    if (value is! Map) {
+      return 0;
+    }
+    final id = value['id'] ?? value['userId'] ?? value['uid'];
+    return _intOf(id);
+  }
+
+  static int _intOf(Object? value) {
+    return value is int ? value : int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }
 

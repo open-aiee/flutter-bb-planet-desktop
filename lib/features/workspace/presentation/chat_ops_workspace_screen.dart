@@ -176,8 +176,8 @@ class _HomeScreenMainWindow extends ConsumerStatefulWidget {
 
 class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   _RailTab _selectedTab = _RailTab.chats;
-  int _selectedConversationIndex = 0;
   int? _selectedConversationPeerUserId;
+  _Conversation? _activeConversation;
   bool _isConversationLoading = false;
   bool _isSearchLoading = false;
   bool _didShowAccountHistory = false;
@@ -199,6 +199,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   final Map<_RailTab, List<_Conversation>> _remoteConversations = {};
   final Map<_RailTab, String> _remoteNotices = {};
   final Map<int, int> _directRoomIds = {};
+  final Map<int, Future<int?>> _directRoomRequests = {};
   final Map<String, List<LocalChatMessage>> _storedMessages = {};
   final Map<int, LocalChatMessage> _recentMessagesByPeer = {};
   final Map<int, LocalChatPeerProfile> _peerProfiles = {};
@@ -265,11 +266,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           ? _searchConversations
           : _conversationsForTab(l10n, _selectedTab),
     );
-    final safeSelectedIndex = _selectedIndexFor(conversations);
-    final selectedConversation =
-        conversations.isEmpty || _selectedConversationPeerUserId == null
-        ? null
-        : conversations[safeSelectedIndex];
+    final selectedConversationIndex = _selectedIndexIn(conversations);
+    final selectedConversation = _selectedConversationFrom(conversations);
     final storageKey = selectedConversation == null
         ? null
         : _storageKeyFor(selectedConversation);
@@ -277,6 +275,15 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     final messages = selectedConversation == null
         ? const <_ChatMessage>[]
         : _messagesForConversation(selectedConversation);
+    debugPrint(
+      '[CHAT_OPS][UI][BUILD_SELECTION] '
+      'selectedPeer=${selectedConversation?.targetUserId} '
+      'selectedRoom=${selectedConversation?.roomId} '
+      'activePeer=${_activeConversation?.targetUserId} '
+      'listIndex=$selectedConversationIndex '
+      'listCount=${conversations.length} messages=${messages.length} '
+      'canSend=${selectedConversation != null}',
+    );
 
     return Container(
       color: Colors.white,
@@ -291,7 +298,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             selectedTab: _selectedTab,
             selectedConversationIndex: selectedConversation == null
                 ? -1
-                : safeSelectedIndex,
+                : selectedConversationIndex,
             conversations: conversations,
             isConversationLoading: isSearching
                 ? _isSearchLoading
@@ -302,9 +309,14 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             onConversationSelected: (index) {
               final safeIndex = index.clamp(0, conversations.length - 1);
               final conversation = conversations[safeIndex];
+              debugPrint(
+                '[CHAT_OPS][UI][SELECT_CONVERSATION] index=$safeIndex '
+                'peer=${conversation.targetUserId} room=${conversation.roomId} '
+                'name=${conversation.name}',
+              );
               setState(() {
-                _selectedConversationIndex = safeIndex;
                 _selectedConversationPeerUserId = conversation.targetUserId;
+                _activeConversation = conversation;
               });
               _activateConversation(conversation);
             },
@@ -331,16 +343,36 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
               },
               onSend: selectedConversation == null
                   ? null
-                  : (text) => _sendLocalMessage(selectedConversation, text),
+                  : (text) {
+                      final activeConversation =
+                          _selectedConversation() ?? selectedConversation;
+                      debugPrint(
+                        '[CHAT_OPS][UI][ON_SEND] '
+                        'displayPeer=${selectedConversation.targetUserId} '
+                        'activePeer=${activeConversation.targetUserId} '
+                        'activeRoom=${activeConversation.roomId} '
+                        'textLength=${text.trim().length}',
+                      );
+                      _sendLocalMessage(activeConversation, text);
+                    },
               onSendEmojiGame: selectedConversation == null
                   ? null
-                  : (game) => _sendEmojiGameMessage(selectedConversation, game),
+                  : (game) => _sendEmojiGameMessage(
+                      _selectedConversation() ?? selectedConversation,
+                      game,
+                    ),
               onSendMedia: selectedConversation == null
                   ? null
-                  : (media) => _sendMediaMessage(selectedConversation, media),
+                  : (media) => _sendMediaMessage(
+                      _selectedConversation() ?? selectedConversation,
+                      media,
+                    ),
               onSendVoice: selectedConversation == null
                   ? null
-                  : (voice) => _sendVoiceMessage(selectedConversation, voice),
+                  : (voice) => _sendVoiceMessage(
+                      _selectedConversation() ?? selectedConversation,
+                      voice,
+                    ),
             ),
           ),
         ],
@@ -359,8 +391,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
 
     setState(() {
       _selectedTab = tab;
-      _selectedConversationIndex = 0;
       _selectedConversationPeerUserId = null;
+      _activeConversation = null;
     });
 
     if (tab == _RailTab.chats) {
@@ -438,8 +470,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         _searchConversations = const [];
         _searchNotice = null;
         _isSearchLoading = false;
-        _selectedConversationIndex = 0;
         _selectedConversationPeerUserId = null;
+        _activeConversation = null;
       });
       return;
     }
@@ -448,8 +480,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _searchQuery = query;
       _isSearchLoading = true;
       _searchNotice = null;
-      _selectedConversationIndex = 0;
       _selectedConversationPeerUserId = null;
+      _activeConversation = null;
     });
     _searchDebounce = Timer(
       const Duration(milliseconds: 300),
@@ -796,15 +828,28 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     final conversations = _searchQuery.trim().isNotEmpty
         ? _searchConversations
         : _conversationsForTab(l10n, _selectedTab);
-    if (conversations.isEmpty || _selectedConversationPeerUserId == null) {
-      return null;
-    }
-    return conversations[_selectedIndexFor(conversations)];
+    return _selectedConversationFrom(conversations);
   }
 
-  int _selectedIndexFor(List<_Conversation> conversations) {
+  _Conversation? _selectedConversationFrom(List<_Conversation> conversations) {
+    final selectedPeerUserId = _selectedConversationPeerUserId;
+    if (selectedPeerUserId == null || selectedPeerUserId <= 0) {
+      return null;
+    }
+    final index = _selectedIndexIn(conversations);
+    if (index >= 0) {
+      return conversations[index];
+    }
+    final active = _activeConversation;
+    if (active?.targetUserId == selectedPeerUserId) {
+      return active;
+    }
+    return null;
+  }
+
+  int _selectedIndexIn(List<_Conversation> conversations) {
     if (conversations.isEmpty) {
-      return 0;
+      return -1;
     }
     final selectedPeerUserId = _selectedConversationPeerUserId;
     if (selectedPeerUserId != null && selectedPeerUserId > 0) {
@@ -815,7 +860,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         return index;
       }
     }
-    return _selectedConversationIndex.clamp(0, conversations.length - 1);
+    return -1;
   }
 
   int? _roomIdFor(_Conversation conversation) {
@@ -826,36 +871,122 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     return conversation.roomId;
   }
 
-  Future<int?> _ensureConversationRoomId(_Conversation conversation) async {
+  bool _isCurrentAppSession(AppUserSession session) {
+    final current = widget.appAccountSession;
+    return mounted &&
+        current?.id == session.id &&
+        current?.certificate == session.certificate;
+  }
+
+  Future<int?> _ensureConversationRoomId(
+    _Conversation conversation, {
+    bool forceStart = false,
+  }) async {
     final session = widget.appAccountSession;
     final peerUserId = conversation.targetUserId;
     final existingRoomId = _roomIdFor(conversation);
-    if (existingRoomId != null && existingRoomId > 0) {
+    if (!forceStart && existingRoomId != null && existingRoomId > 0) {
       return existingRoomId;
     }
     if (session == null || peerUserId == null || peerUserId <= 0) {
       return null;
     }
+    final pendingRequest = _directRoomRequests[peerUserId];
+    if (pendingRequest != null) {
+      debugPrint(
+        '[CHAT_OPS][LOCAL][ROOM_REUSE_PENDING] sender=${session.id} '
+        'peer=$peerUserId forceStart=$forceStart existing=$existingRoomId',
+      );
+      return pendingRequest;
+    }
+
+    final request = _openConversationRoom(conversation, session, peerUserId);
+    _directRoomRequests[peerUserId] = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_directRoomRequests[peerUserId], request)) {
+        _directRoomRequests.remove(peerUserId);
+      }
+    }
+  }
+
+  Future<int?> _openConversationRoom(
+    _Conversation conversation,
+    AppUserSession session,
+    int peerUserId,
+  ) async {
+    final existingRoomId = _roomIdFor(conversation);
     final requestLang = _requestLangOf(context);
+    final l10n = AppLocalizations.of(context);
 
     final deviceId = await DesktopDeviceId(
       secureStore: ref.read(secureStoreProvider),
     ).getOrCreate();
-    final room = await ref
-        .read(directChatApiProvider)
-        .startDirectChat(
-          peerUserId: peerUserId,
-          certificate: session.certificate,
-          deviceId: deviceId,
-          lang: requestLang,
-        );
+    debugPrint(
+      '[CHAT_OPS][LOCAL][ROOM_START] sender=${session.id} '
+      'peer=$peerUserId existing=$existingRoomId',
+    );
+    final DirectChatStartResult room;
+    try {
+      room = await ref
+          .read(directChatApiProvider)
+          .startDirectChat(
+            peerUserId: peerUserId,
+            certificate: session.certificate,
+            deviceId: deviceId,
+            lang: requestLang,
+          );
+    } catch (error) {
+      debugPrint(
+        '[CHAT_OPS][LOCAL][ROOM_FAILED] sender=${session.id} '
+        'peer=$peerUserId error=$error',
+      );
+      rethrow;
+    }
+    if (!_isCurrentAppSession(session)) {
+      debugPrint(
+        '[CHAT_OPS][LOCAL][ROOM_SKIP] reason=session_changed '
+        'sender=${session.id} peer=$peerUserId room=${room.roomId}',
+      );
+      return null;
+    }
+    if (room.fromUserId != session.id || room.toUserId != peerUserId) {
+      debugPrint(
+        '[CHAT_OPS][LOCAL][ROOM_SKIP] reason=participant_mismatch '
+        'sender=${session.id} peer=$peerUserId room=${room.roomId} '
+        'from=${room.fromUserId} to=${room.toUserId}',
+      );
+      return null;
+    }
+    if (room.personalChatStatus != 1) {
+      debugPrint(
+        '[CHAT_OPS][LOCAL][ROOM_SKIP] reason=personal_chat_status '
+        'sender=${session.id} peer=$peerUserId room=${room.roomId} '
+        'status=${room.personalChatStatus}',
+      );
+      throw DirectChatException(
+        _personalChatStatusMessage(l10n, room.personalChatStatus),
+      );
+    }
     _directRoomIds[peerUserId] = room.roomId;
     debugPrint(
       '[CHAT_OPS][LOCAL][ROOM] sender=${session.id} peer=$peerUserId '
-      'room=${room.roomId}',
+      'room=${room.roomId} from=${room.fromUserId} to=${room.toUserId} '
+      'status=${room.personalChatStatus} deduct=${room.deductStatus} '
+      'chatFee=${room.chatFee}',
     );
-    ref.read(imSessionManagerProvider).refreshChatRooms();
     return room.roomId;
+  }
+
+  String _personalChatStatusMessage(AppLocalizations l10n, int status) {
+    return switch (status) {
+      2 => l10n.chatPrivateAccountBlocked,
+      3 => l10n.chatYouBlockedPeer,
+      4 => l10n.chatYouWereBlocked,
+      5 => l10n.chatPeerClosedPrivateChat,
+      _ => l10n.chatOpenFailed,
+    };
   }
 
   Future<void> _loadStoredMessages(_Conversation conversation) async {
@@ -892,6 +1023,11 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     final session = widget.appAccountSession;
     final peerUserId = conversation.targetUserId;
     final messageText = _messageTextForSend(text);
+    debugPrint(
+      '[CHAT_OPS][SEND][ENTRY] sender=${session?.id} peer=$peerUserId '
+      'room=${conversation.roomId} rawLength=${text.length} '
+      'trimLength=${messageText.length}',
+    );
     if (session == null ||
         peerUserId == null ||
         peerUserId <= 0 ||
@@ -918,12 +1054,23 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       clientMessageId: clientMessageId,
     );
 
-    final store = await ref.read(localChatMessageStoreProvider.future);
-    await store.upsert(localMessage);
     debugPrint(
-      '[CHAT_OPS][LOCAL][UPSERT] phase=send_pending '
-      'sender=${session.id} peer=$peerUserId room=${localMessage.roomId} '
-      'local=${localMessage.localId}',
+      '[CHAT_OPS][SEND][LOCAL_STORE_START] sender=${session.id} '
+      'peer=$peerUserId local=${localMessage.localId}',
+    );
+    final storeFuture = ref
+        .read(localChatMessageStoreProvider.future)
+        .timeout(
+          const Duration(milliseconds: 900),
+          onTimeout: () =>
+              throw TimeoutException('Local message store open timeout.'),
+        );
+    unawaited(
+      _upsertLocalMessageInBackground(
+        storeFuture: storeFuture,
+        message: localMessage,
+        phase: 'send_pending',
+      ),
     );
     if (!mounted) {
       return;
@@ -936,54 +1083,82 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _rememberRecentMessageInMemory(localMessage);
     });
 
+    var sendStage = 'prepare';
     try {
       debugPrint(
-        '[CHAT_OPS][VOICE][SEND_STAGE] room_start '
+        '[CHAT_OPS][SEND][START] type=text '
         'sender=${session.id} peer=$peerUserId local=${localMessage.localId}',
       );
-      final roomId = await _ensureConversationRoomId(conversation);
+      sendStage = 'open_room';
+      final roomId = await _ensureConversationRoomId(
+        conversation,
+      );
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
+      }
+      if (!_isCurrentAppSession(session)) {
+        return;
       }
       final updated = localMessage.copyWith(
         roomId: roomId,
         sendStatus: ChatMessageSendStatus.pending,
         updatedAt: DateTime.now(),
       );
-      await store.upsert(updated);
+      unawaited(
+        _upsertLocalMessageInBackground(
+          storeFuture: storeFuture,
+          message: updated,
+          phase: 'send_room',
+        ),
+      );
+      if (!_isCurrentAppSession(session)) {
+        return;
+      }
       debugPrint(
         '[CHAT_OPS][LOCAL][UPSERT] phase=send_room '
         'sender=${session.id} peer=$peerUserId room=$roomId '
         'local=${updated.localId}',
       );
       _replaceStoredMessage(conversation, updated);
-      ref.read(imSessionManagerProvider).refreshChatRooms();
 
+      sendStage = 'send_socket';
       final ack = await ref
           .read(imSessionManagerProvider)
           .sendTextMessage(
+            senderUserId: session.id,
             roomId: roomId,
             text: messageText,
             clientMessageId: clientMessageId,
           );
+      if (!_isCurrentAppSession(session)) {
+        return;
+      }
+      debugPrint(
+        '[CHAT_OPS][SEND][ACK] type=text sender=${session.id} '
+        'peer=$peerUserId room=$roomId cid=$clientMessageId '
+        'success=${ack.success} server=${ack.serverMessageId} '
+        'event=${ack.event} message=${ack.message} raw=${ack.rawPayload}',
+      );
       final completed = updated.copyWith(
         sendStatus: ack.success
             ? ChatMessageSendStatus.sent
             : ChatMessageSendStatus.failed,
         serverMessageId: ack.serverMessageId?.toString(),
-        errorMessage: ack.success
-            ? null
-            : (ack.message == null || ack.message!.trim().isEmpty
-                  ? 'Message send failed'
-                  : ack.message),
+        errorMessage: ack.success ? null : ack.failureSummary(),
         updatedAt: DateTime.now(),
       );
-      await store.upsert(completed);
+      unawaited(
+        _upsertLocalMessageInBackground(
+          storeFuture: storeFuture,
+          message: completed,
+          phase: 'send_completed',
+        ),
+      );
       debugPrint(
         '[CHAT_OPS][LOCAL][UPSERT] phase=send_completed '
         'sender=${session.id} peer=$peerUserId room=$roomId '
         'local=${completed.localId} server=${completed.serverMessageId} '
-        'status=${completed.sendStatus.name}',
+        'status=${completed.sendStatus.name} error=${completed.errorMessage}',
       );
       _replaceStoredMessage(conversation, completed);
       unawaited(
@@ -996,16 +1171,54 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     } catch (error) {
       final failed = localMessage.copyWith(
         sendStatus: ChatMessageSendStatus.failed,
-        errorMessage: error.toString(),
+        errorMessage: 'stage=$sendStage; error=$error',
         updatedAt: DateTime.now(),
       );
-      await store.upsert(failed);
+      unawaited(
+        _upsertLocalMessageInBackground(
+          storeFuture: storeFuture,
+          message: failed,
+          phase: 'send_failed',
+        ),
+      );
       debugPrint(
         '[CHAT_OPS][LOCAL][UPSERT] phase=send_failed '
         'sender=${session.id} peer=$peerUserId local=${failed.localId} '
-        'error=$error',
+        'stage=$sendStage error=$error',
       );
       _replaceStoredMessage(conversation, failed);
+    }
+  }
+
+  Future<void> _upsertLocalMessageInBackground({
+    required Future<LocalChatMessageStore> storeFuture,
+    required LocalChatMessage message,
+    required String phase,
+  }) async {
+    try {
+      final store = await storeFuture;
+      debugPrint(
+        '[CHAT_OPS][SEND][LOCAL_STORE_READY] sender=${message.appUserId} '
+        'peer=${message.peerUserId} local=${message.localId} phase=$phase',
+      );
+      await store
+          .upsert(message)
+          .timeout(
+            const Duration(milliseconds: 900),
+            onTimeout: () =>
+                throw TimeoutException('Local message $phase upsert timeout.'),
+          );
+      debugPrint(
+        '[CHAT_OPS][LOCAL][UPSERT] phase=$phase '
+        'sender=${message.appUserId} peer=${message.peerUserId} '
+        'room=${message.roomId} local=${message.localId}',
+      );
+    } catch (error) {
+      debugPrint(
+        '[CHAT_OPS][SEND][LOCAL_STORE_FAILED] '
+        'sender=${message.appUserId} peer=${message.peerUserId} '
+        'local=${message.localId} phase=$phase error=$error',
+      );
     }
   }
 
@@ -1057,9 +1270,19 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     });
 
     try {
-      final roomId = await _ensureConversationRoomId(conversation);
+      debugPrint(
+        '[CHAT_OPS][SEND][START] type=emoji_game '
+        'sender=${session.id} peer=$peerUserId local=${localMessage.localId} '
+        'gameType=${game.type} value=${game.value}',
+      );
+      final roomId = await _ensureConversationRoomId(
+        conversation,
+      );
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
+      }
+      if (!_isCurrentAppSession(session)) {
+        return;
       }
       final updated = localMessage.copyWith(
         roomId: roomId,
@@ -1067,17 +1290,29 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         updatedAt: DateTime.now(),
       );
       await store.upsert(updated);
+      if (!_isCurrentAppSession(session)) {
+        return;
+      }
       _replaceStoredMessage(conversation, updated);
-      ref.read(imSessionManagerProvider).refreshChatRooms();
 
       final ack = await ref
           .read(imSessionManagerProvider)
           .sendEmojiGameMessage(
+            senderUserId: session.id,
             roomId: roomId,
             type: game.type,
             value: game.value,
             clientMessageId: clientMessageId,
           );
+      if (!_isCurrentAppSession(session)) {
+        return;
+      }
+      debugPrint(
+        '[CHAT_OPS][SEND][ACK] type=emoji_game sender=${session.id} '
+        'peer=$peerUserId room=$roomId cid=$clientMessageId '
+        'success=${ack.success} server=${ack.serverMessageId} '
+        'event=${ack.event} message=${ack.message} raw=${ack.rawPayload}',
+      );
       final completed = updated.copyWith(
         sendStatus: ack.success
             ? ChatMessageSendStatus.sent
@@ -1085,9 +1320,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         serverMessageId: ack.serverMessageId?.toString(),
         errorMessage: ack.success
             ? null
-            : (ack.message == null || ack.message!.trim().isEmpty
-                  ? 'Emoji send failed'
-                  : ack.message),
+            : ack.failureSummary(fallback: 'Emoji send failed'),
         updatedAt: DateTime.now(),
       );
       await store.upsert(completed);
@@ -1095,7 +1328,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         '[CHAT_OPS][LOCAL][UPSERT] phase=emoji_game_completed '
         'sender=${session.id} peer=$peerUserId room=$roomId '
         'local=${completed.localId} server=${completed.serverMessageId} '
-        'status=${completed.sendStatus.name}',
+        'status=${completed.sendStatus.name} error=${completed.errorMessage}',
       );
       _replaceStoredMessage(conversation, completed);
       unawaited(
@@ -1180,9 +1413,19 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     });
 
     try {
-      final roomId = await _ensureConversationRoomId(conversation);
+      debugPrint(
+        '[CHAT_OPS][SEND][START] type=${media.isVideo ? 'video' : 'photo'} '
+        'sender=${session.id} peer=$peerUserId local=${localMessage.localId} '
+        'path=${media.path}',
+      );
+      final roomId = await _ensureConversationRoomId(
+        conversation,
+      );
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
+      }
+      if (!_isCurrentAppSession(session)) {
+        return false;
       }
       final updated = localMessage.copyWith(
         roomId: roomId,
@@ -1190,8 +1433,10 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         updatedAt: DateTime.now(),
       );
       await store.upsert(updated);
+      if (!_isCurrentAppSession(session)) {
+        return false;
+      }
       _replaceStoredMessage(conversation, updated);
-      ref.read(imSessionManagerProvider).refreshChatRooms();
 
       final uploadApi = ref.read(chatMediaUploadApiProvider);
       final mediaData = media.isVideo
@@ -1209,14 +1454,28 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
               deviceId: session.deviceId,
               lang: requestLang,
             );
+      if (!_isCurrentAppSession(session)) {
+        return false;
+      }
 
       final ack = await ref
           .read(imSessionManagerProvider)
           .sendMediaMessage(
+            senderUserId: session.id,
             roomId: roomId,
             msgData: [mediaData],
             clientMessageId: clientMessageId,
           );
+      if (!_isCurrentAppSession(session)) {
+        return false;
+      }
+      debugPrint(
+        '[CHAT_OPS][SEND][ACK] type=${media.isVideo ? 'video' : 'photo'} '
+        'sender=${session.id} peer=$peerUserId room=$roomId '
+        'cid=$clientMessageId success=${ack.success} '
+        'server=${ack.serverMessageId} event=${ack.event} '
+        'message=${ack.message} raw=${ack.rawPayload}',
+      );
       final completed = updated.copyWith(
         sendStatus: ack.success
             ? ChatMessageSendStatus.sent
@@ -1224,14 +1483,18 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         serverMessageId: ack.serverMessageId?.toString(),
         errorMessage: ack.success
             ? null
-            : (ack.message == null || ack.message!.trim().isEmpty
-                  ? 'Media send failed'
-                  : ack.message),
+            : ack.failureSummary(fallback: 'Media send failed'),
         msgData: jsonEncode(mediaData),
         localMediaPath: media.path,
         updatedAt: DateTime.now(),
       );
       await store.upsert(completed);
+      debugPrint(
+        '[CHAT_OPS][LOCAL][UPSERT] phase=media_completed '
+        'sender=${session.id} peer=$peerUserId room=$roomId '
+        'local=${completed.localId} server=${completed.serverMessageId} '
+        'status=${completed.sendStatus.name} error=${completed.errorMessage}',
+      );
       _replaceStoredMessage(conversation, completed);
       unawaited(
         _syncRemoteMessages(
@@ -1248,6 +1511,11 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         updatedAt: DateTime.now(),
       );
       await store.upsert(failed);
+      debugPrint(
+        '[CHAT_OPS][LOCAL][UPSERT] phase=media_failed '
+        'sender=${session.id} peer=$peerUserId room=${failed.roomId} '
+        'local=${failed.localId} error=$error',
+      );
       _replaceStoredMessage(conversation, failed);
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -1320,9 +1588,19 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     });
 
     try {
-      final roomId = await _ensureConversationRoomId(conversation);
+      debugPrint(
+        '[CHAT_OPS][SEND][START] type=voice '
+        'sender=${session.id} peer=$peerUserId local=${localMessage.localId} '
+        'path=${voice.path} duration=$durationSeconds',
+      );
+      final roomId = await _ensureConversationRoomId(
+        conversation,
+      );
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
+      }
+      if (!_isCurrentAppSession(session)) {
+        return false;
       }
       final updated = localMessage.copyWith(
         roomId: roomId,
@@ -1330,8 +1608,10 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         updatedAt: DateTime.now(),
       );
       await store.upsert(updated);
+      if (!_isCurrentAppSession(session)) {
+        return false;
+      }
       _replaceStoredMessage(conversation, updated);
-      ref.read(imSessionManagerProvider).refreshChatRooms();
 
       final uploadApi = ref.read(chatMediaUploadApiProvider);
       debugPrint(
@@ -1350,6 +1630,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             onTimeout: () =>
                 throw const ChatMediaUploadException('Voice upload timeout.'),
           );
+      if (!_isCurrentAppSession(session)) {
+        return false;
+      }
       debugPrint('[CHAT_OPS][VOICE][SEND_STAGE] upload_done url=$voiceUrl');
       final voiceData = {
         'mediaCover': '',
@@ -1361,13 +1644,19 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       final ack = await ref
           .read(imSessionManagerProvider)
           .sendMediaMessage(
+            senderUserId: session.id,
             roomId: roomId,
             msgData: [voiceData],
             clientMessageId: clientMessageId,
           );
+      if (!_isCurrentAppSession(session)) {
+        return false;
+      }
       debugPrint(
-        '[CHAT_OPS][VOICE][SEND_STAGE] socket_done success=${ack.success} '
-        'message=${ack.message}',
+        '[CHAT_OPS][SEND][ACK] type=voice sender=${session.id} '
+        'peer=$peerUserId room=$roomId cid=$clientMessageId '
+        'success=${ack.success} server=${ack.serverMessageId} '
+        'event=${ack.event} message=${ack.message} raw=${ack.rawPayload}',
       );
       final completed = updated.copyWith(
         sendStatus: ack.success
@@ -1376,14 +1665,18 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         serverMessageId: ack.serverMessageId?.toString(),
         errorMessage: ack.success
             ? null
-            : (ack.message == null || ack.message!.trim().isEmpty
-                  ? 'Voice send failed'
-                  : ack.message),
+            : ack.failureSummary(fallback: 'Voice send failed'),
         msgData: jsonEncode(voiceData),
         localMediaPath: voice.path,
         updatedAt: DateTime.now(),
       );
       await store.upsert(completed);
+      debugPrint(
+        '[CHAT_OPS][LOCAL][UPSERT] phase=voice_completed '
+        'sender=${session.id} peer=$peerUserId room=$roomId '
+        'local=${completed.localId} server=${completed.serverMessageId} '
+        'status=${completed.sendStatus.name} error=${completed.errorMessage}',
+      );
       _replaceStoredMessage(conversation, completed);
       unawaited(
         _syncRemoteMessages(
@@ -1400,6 +1693,11 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         updatedAt: DateTime.now(),
       );
       await store.upsert(failed);
+      debugPrint(
+        '[CHAT_OPS][LOCAL][UPSERT] phase=voice_failed '
+        'sender=${session.id} peer=$peerUserId room=${failed.roomId} '
+        'local=${failed.localId} error=$error',
+      );
       _replaceStoredMessage(conversation, failed);
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -1515,6 +1813,15 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     if (session == null) {
       return;
     }
+    final socketCertificate = payload['__socketCertificate']?.toString() ?? '';
+    if (socketCertificate.isNotEmpty &&
+        socketCertificate != session.certificate) {
+      debugPrint(
+        '[CHAT_OPS][SOCKET][SKIP] reason=session_mismatch '
+        'sender=${session.id}',
+      );
+      return;
+    }
 
     final socketMessage = _IncomingSocketMessage.fromJson(payload);
     await _persistIncomingSocketMessage(socketMessage, session);
@@ -1524,6 +1831,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     final session = widget.appAccountSession;
     final readMsgIndex = event.readMsgIndex;
     if (session == null ||
+        (event.socketCertificate?.isNotEmpty == true &&
+            event.socketCertificate != session.certificate) ||
         event.userId == session.id ||
         readMsgIndex == null ||
         readMsgIndex <= 0) {
@@ -1572,9 +1881,15 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             .map((message) => message.roomId)
             .whereType<int>()
             .where((roomId) => roomId > 0)
-            .lastOrNull ??
-        await _ensureConversationRoomId(conversation);
+            .lastOrNull;
     if (roomId == null || roomId <= 0) {
+      debugPrint(
+        '[CHAT_OPS][LOCAL][SYNC_SKIP] reason=no_room '
+        'sender=${session.id} peer=$peerUserId',
+      );
+      return;
+    }
+    if (!_isCurrentAppSession(session)) {
       return;
     }
 
@@ -1586,6 +1901,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       ack = await ref
           .read(imSessionManagerProvider)
           .syncRecords(startMsgIndex: startMsgIndex, roomId: roomId);
+      if (!_isCurrentAppSession(session)) {
+        return;
+      }
       debugPrint(
         '[CHAT_OPS][LOCAL][SYNC_ATTEMPT] sender=${session.id} '
         'peer=$peerUserId room=$roomId attempt=$attempt '
@@ -1608,6 +1926,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       return;
     }
     for (final record in ack.records) {
+      if (!_isCurrentAppSession(session)) {
+        return;
+      }
       await _persistIncomingSocketMessage(
         _IncomingSocketMessage.fromJson(record),
         session,
@@ -1627,6 +1948,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         'user=${socketMessage.userId} room=${socketMessage.roomId} '
         'sendType=${socketMessage.sendType}',
       );
+      return;
+    }
+    if (!_isCurrentAppSession(session)) {
       return;
     }
     final socketRoomId = socketMessage.roomId;
@@ -1911,10 +2235,14 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         _chatNotice = conversations.isEmpty ? l10n.workspaceUsersEmpty : null;
         if (_selectedTab == _RailTab.chats) {
           _isConversationLoading = false;
-          _selectedConversationIndex = _selectedIndexFor(conversations);
+          final selectedIndex = _selectedIndexIn(conversations);
+          if (selectedIndex >= 0) {
+            _activeConversation = conversations[selectedIndex];
+          }
           if (_selectedConversationPeerUserId != null &&
               !validPeerIds.contains(_selectedConversationPeerUserId)) {
             _selectedConversationPeerUserId = null;
+            _activeConversation = null;
           }
         }
       });
@@ -2042,8 +2370,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     _searchDebounce?.cancel();
     _activeConversationSyncTimer?.cancel();
     setState(() {
-      _selectedConversationIndex = 0;
       _selectedConversationPeerUserId = null;
+      _activeConversation = null;
       _isConversationLoading = false;
       _isSearchLoading = false;
       _isActiveConversationSyncing = false;
@@ -3071,6 +3399,7 @@ class _ChatSection extends StatefulWidget {
 class _ChatSectionState extends State<_ChatSection> {
   final ScrollController _messageScrollController = ScrollController();
   bool _showJumpToBottom = false;
+  bool _showContactInfo = false;
 
   @override
   void initState() {
@@ -3086,6 +3415,11 @@ class _ChatSectionState extends State<_ChatSection> {
   @override
   void didUpdateWidget(covariant _ChatSection oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.conversation?.targetUserId !=
+            widget.conversation?.targetUserId ||
+        oldWidget.conversation?.name != widget.conversation?.name) {
+      _showContactInfo = false;
+    }
     if (oldWidget.conversation?.name != widget.conversation?.name ||
         oldWidget.messages.length != widget.messages.length) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -3171,6 +3505,17 @@ class _ChatSectionState extends State<_ChatSection> {
       return _ChatEmptyState(message: widget.emptyMessage);
     }
 
+    if (_showContactInfo) {
+      return _ContactInfoPage(
+        conversation: conversation,
+        messages: widget.messages,
+        l10n: widget.l10n,
+        onlineText: widget.l10n.workspaceUserOnline,
+        offlineText: widget.l10n.appAccountStatusOffline,
+        onBack: () => setState(() => _showContactInfo = false),
+      );
+    }
+
     return SizedBox.expand(
       child: Stack(
         children: [
@@ -3190,6 +3535,7 @@ class _ChatSectionState extends State<_ChatSection> {
               connectionStatus: widget.connectionStatus,
               l10n: widget.l10n,
               onlineText: widget.l10n.workspaceUserOnline,
+              onOpenInfo: () => setState(() => _showContactInfo = true),
             ),
           ),
           Positioned(
@@ -3200,6 +3546,7 @@ class _ChatSectionState extends State<_ChatSection> {
             child: _ScrollableMessageList(
               controller: _messageScrollController,
               messages: widget.messages,
+              l10n: widget.l10n,
             ),
           ),
           Positioned(
@@ -3239,14 +3586,16 @@ class _ScrollableMessageList extends StatelessWidget {
   const _ScrollableMessageList({
     required this.controller,
     required this.messages,
+    required this.l10n,
   });
 
   final ScrollController controller;
   final List<_ChatMessage> messages;
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
-    final items = _MessageTimelineItem.build(messages);
+    final items = _MessageTimelineItem.build(messages, l10n);
     return RawScrollbar(
       controller: controller,
       thumbVisibility: true,
@@ -3285,9 +3634,14 @@ class _MessageTimelineItem {
   final String? dateLabel;
   final _ChatMessage? message;
 
-  static List<_MessageTimelineItem> build(List<_ChatMessage> messages) {
+  static List<_MessageTimelineItem> build(
+    List<_ChatMessage> messages,
+    AppLocalizations l10n,
+  ) {
     if (messages.isEmpty) {
-      return [_MessageTimelineItem.date(_formatDatePillLabel(DateTime.now()))];
+      return [
+        _MessageTimelineItem.date(_formatDatePillLabel(DateTime.now(), l10n)),
+      ];
     }
 
     final items = <_MessageTimelineItem>[];
@@ -3295,7 +3649,9 @@ class _MessageTimelineItem {
     for (final message in messages) {
       final currentDay = _dateOnly(message.createdAt.toLocal());
       if (previousDay == null || currentDay != previousDay) {
-        items.add(_MessageTimelineItem.date(_formatDatePillLabel(currentDay)));
+        items.add(
+          _MessageTimelineItem.date(_formatDatePillLabel(currentDay, l10n)),
+        );
         previousDay = currentDay;
       }
       items.add(_MessageTimelineItem.message(message));
@@ -3310,15 +3666,15 @@ DateTime _dateOnly(DateTime value) =>
 bool _isSameDate(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
-String _formatDatePillLabel(DateTime date) {
+String _formatDatePillLabel(DateTime date, AppLocalizations l10n) {
   final local = date.toLocal();
   final today = _dateOnly(DateTime.now());
   final yesterday = today.subtract(const Duration(days: 1));
   if (_isSameDate(local, today)) {
-    return 'TODAY';
+    return l10n.dateToday;
   }
   if (_isSameDate(local, yesterday)) {
-    return 'YESTERDAY';
+    return l10n.dateYesterday;
   }
 
   const months = [
@@ -3457,6 +3813,7 @@ class _ChatHeader extends StatelessWidget {
     required this.connectionStatus,
     required this.l10n,
     required this.onlineText,
+    required this.onOpenInfo,
   });
 
   final _Conversation conversation;
@@ -3464,6 +3821,7 @@ class _ChatHeader extends StatelessWidget {
   final ConnectionStatus connectionStatus;
   final AppLocalizations l10n;
   final String onlineText;
+  final VoidCallback onOpenInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -3473,76 +3831,514 @@ class _ChatHeader extends StatelessWidget {
         ? onlineText
         : l10n.appAccountStatusOffline;
 
-    return Container(
-      height: 50,
+    return Material(
       color: const Color(0xfff7f7fc),
-      padding: const EdgeInsets.only(left: 18, right: 16, top: 6, bottom: 6),
-      child: Row(
-        children: [
-          _LetterAvatar(
-            color: conversation.color,
-            label: conversation.emoji,
-            avatarUrl: conversation.avatarUrl,
-            online: conversation.isOnline,
-            size: 40,
+      child: InkWell(
+        onTap: onOpenInfo,
+        child: Container(
+          height: 50,
+          padding: const EdgeInsets.only(
+            left: 18,
+            right: 16,
+            top: 6,
+            bottom: 6,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  conversation.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xff111b21),
-                    fontSize: 14,
-                    height: 18 / 14,
-                    fontWeight: FontWeight.w500,
-                  ),
+          child: Row(
+            children: [
+              _LetterAvatar(
+                color: conversation.color,
+                label: conversation.emoji,
+                avatarUrl: conversation.avatarUrl,
+                online: conversation.isOnline,
+                size: 40,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      conversation.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xff111b21),
+                        fontSize: 14,
+                        height: 18 / 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    if (peerText.isNotEmpty)
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              peerText,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xff667781),
+                                fontSize: 11,
+                                height: 13 / 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _OnlineDot(online: conversation.isOnline),
+                          const SizedBox(width: 5),
+                          Text(
+                            statusText,
+                            style: TextStyle(
+                              color: conversation.isOnline
+                                  ? const Color(0xff1da855)
+                                  : const Color(0xff8d969c),
+                              fontSize: 11,
+                              height: 13 / 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 1),
-                if (peerText.isNotEmpty)
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          peerText,
-                          overflow: TextOverflow.ellipsis,
+              ),
+              const _HeaderIcon(Icons.call_rounded),
+              const SizedBox(width: 22),
+              const _HeaderIcon(Icons.search_rounded),
+              const SizedBox(width: 22),
+              const _HeaderIcon(Icons.more_horiz_rounded),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactInfoPage extends StatelessWidget {
+  const _ContactInfoPage({
+    required this.conversation,
+    required this.messages,
+    required this.l10n,
+    required this.onlineText,
+    required this.offlineText,
+    required this.onBack,
+  });
+
+  final _Conversation conversation;
+  final List<_ChatMessage> messages;
+  final AppLocalizations l10n;
+  final String onlineText;
+  final String offlineText;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final peerUserId = conversation.targetUserId;
+    final statusText = conversation.isOnline ? onlineText : offlineText;
+    final username = peerUserId == null
+        ? '@${conversation.name}'
+        : '@bbp_$peerUserId';
+    final mediaMessages = messages
+        .where((message) => message.media != null && !message.media!.isVoice)
+        .map((message) => message.media!)
+        .toList(growable: false);
+
+    return Container(
+      color: const Color(0xfff0f1f5),
+      child: Column(
+        children: [
+          Container(
+            height: 58,
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(
+              children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onBack,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.chevron_left_rounded,
+                          color: Color(0xff2383d2),
+                          size: 34,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          l10n.contactInfoBack,
                           style: const TextStyle(
-                            color: Color(0xff667781),
-                            fontSize: 11,
-                            height: 13 / 11,
-                            fontWeight: FontWeight.w500,
+                            color: Color(0xff2383d2),
+                            fontSize: 16,
+                            height: 22 / 16,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      _OnlineDot(online: conversation.isOnline),
-                      const SizedBox(width: 5),
-                      Text(
-                        statusText,
-                        style: TextStyle(
-                          color: conversation.isOnline
-                              ? const Color(0xff1da855)
-                              : const Color(0xff8d969c),
-                          fontSize: 11,
-                          height: 13 / 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      l10n.contactInfoTitle,
+                      style: const TextStyle(
+                        color: Color(0xff0b141a),
+                        fontSize: 18,
+                        height: 24 / 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 86),
               ],
             ),
           ),
-          const _HeaderIcon(Icons.call_rounded),
-          const SizedBox(width: 22),
-          const _HeaderIcon(Icons.search_rounded),
-          const SizedBox(width: 22),
-          const _HeaderIcon(Icons.more_horiz_rounded),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  const SizedBox(height: 42),
+                  _LetterAvatar(
+                    color: conversation.color,
+                    label: conversation.emoji,
+                    avatarUrl: conversation.avatarUrl,
+                    online: conversation.isOnline,
+                    size: 128,
+                  ),
+                  const SizedBox(height: 22),
+                  Text(
+                    conversation.name,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontSize: 24,
+                      height: 30 / 24,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    conversation.isOnline
+                        ? statusText
+                        : l10n.contactInfoLastSeenRecently,
+                    style: const TextStyle(
+                      color: Color(0xff9a9a9a),
+                      fontSize: 17,
+                      height: 24 / 17,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 48),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _InfoActionButton(
+                            icon: Icons.chat_bubble_rounded,
+                            label: l10n.contactInfoMessage,
+                          ),
+                        ),
+                        const SizedBox(width: 18),
+                        Expanded(
+                          child: _InfoActionButton(
+                            icon: Icons.call_rounded,
+                            label: l10n.contactInfoCall,
+                          ),
+                        ),
+                        const SizedBox(width: 18),
+                        Expanded(
+                          child: _InfoActionButton(
+                            icon: Icons.more_horiz_rounded,
+                            label: l10n.contactInfoMore,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 40),
+                    child: _InfoDetailsCard(
+                      l10n: l10n,
+                      username: username,
+                      peerUserId: peerUserId,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _InfoMediaSection(l10n: l10n, mediaItems: mediaMessages),
+                ],
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _InfoActionButton extends StatelessWidget {
+  const _InfoActionButton({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 62,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: const Color(0xff2383d2), size: 22),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xff2383d2),
+              fontSize: 14,
+              height: 18 / 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoDetailsCard extends StatelessWidget {
+  const _InfoDetailsCard({
+    required this.l10n,
+    required this.username,
+    required this.peerUserId,
+  });
+
+  final AppLocalizations l10n;
+  final String username;
+  final int? peerUserId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.contactInfoUsername,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 14,
+              height: 20 / 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  username,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xff2383d2),
+                    fontSize: 15,
+                    height: 21 / 15,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.copy_rounded,
+                color: Color(0xff2383d2),
+                size: 24,
+              ),
+            ],
+          ),
+          if (peerUserId != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'UID $peerUserId',
+              style: const TextStyle(
+                color: Color(0xff667781),
+                fontSize: 13,
+                height: 18 / 13,
+              ),
+            ),
+          ],
+          const Divider(height: 22, color: Color(0xffe6e9eb)),
+          Text(
+            l10n.contactInfoAddContact,
+            style: const TextStyle(
+              color: Color(0xff2383d2),
+              fontSize: 15,
+              height: 21 / 15,
+            ),
+          ),
+          const Divider(height: 22, color: Color(0xffe6e9eb)),
+          Text(
+            l10n.contactInfoBlockUser,
+            style: const TextStyle(
+              color: Color(0xffff3b30),
+              fontSize: 15,
+              height: 21 / 15,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoMediaSection extends StatelessWidget {
+  const _InfoMediaSection({required this.l10n, required this.mediaItems});
+
+  final AppLocalizations l10n;
+  final List<_ChatMedia> mediaItems;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(28, 18, 28, 6),
+            child: Text(
+              l10n.contactInfoMedia,
+              style: const TextStyle(
+                color: Color(0xff2383d2),
+                fontSize: 17,
+                height: 24 / 17,
+              ),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(left: 28),
+            width: 54,
+            height: 3,
+            decoration: BoxDecoration(
+              color: const Color(0xff2383d2),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xffe2e4e7)),
+          if (mediaItems.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(28, 28, 28, 60),
+              child: Text(
+                l10n.contactInfoNoMedia,
+                style: const TextStyle(
+                  color: Color(0xff9a9a9a),
+                  fontSize: 15,
+                  height: 22 / 15,
+                ),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 0, 0, 60),
+              child: Wrap(
+                spacing: 2,
+                runSpacing: 2,
+                children: mediaItems
+                    .map((media) => _InfoMediaTile(media: media))
+                    .toList(growable: false),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoMediaTile extends StatelessWidget {
+  const _InfoMediaTile({required this.media});
+
+  final _ChatMedia media;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = media.previewSource;
+    return InkWell(
+      onTap: () {
+        showDialog<void>(
+          context: context,
+          barrierColor: const Color(0xdd0b141a),
+          builder: (_) => _MediaViewerDialog(media: media),
+        );
+      },
+      child: SizedBox(
+        width: 120,
+        height: 120,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (source.isEmpty)
+              _MediaMessageFallback(isVideo: media.isVideo)
+            else if (source.startsWith('http'))
+              Image.network(
+                source,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    _MediaMessageFallback(isVideo: media.isVideo),
+              )
+            else
+              Image.file(
+                File(source),
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    _MediaMessageFallback(isVideo: media.isVideo),
+              ),
+            if (media.isVideo)
+              Positioned(
+                left: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.58),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _formatVoiceDuration(media.durationSeconds ?? 0),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      height: 16 / 12,
+                    ),
+                  ),
+                ),
+              ),
+            if (media.isVideo)
+              const Center(
+                child: Icon(
+                  Icons.play_circle_fill_rounded,
+                  color: Colors.white,
+                  size: 38,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -4396,6 +5192,20 @@ class _MessageInputState extends State<_MessageInput> {
   }
 
   @override
+  void didUpdateWidget(covariant _MessageInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.key != widget.key) {
+      _resetVoiceUiState();
+    }
+    if (widget.initialValue != _controller.text && !_focusNode.hasFocus) {
+      _controller.text = widget.initialValue;
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
+  @override
   void dispose() {
     _hideEmojiPanel(notify: false);
     _hideAttachmentMenu(notify: false);
@@ -4410,8 +5220,36 @@ class _MessageInputState extends State<_MessageInput> {
     super.dispose();
   }
 
+  void _resetVoiceUiState() {
+    _voiceTimer?.cancel();
+    _voiceStopwatch
+      ..stop()
+      ..reset();
+    if (_isVoiceRecording) {
+      unawaited(_voiceRecorder.cancel());
+    }
+    _isVoiceRecording = false;
+    _isVoiceSending = false;
+    _voiceSeconds = 0;
+    _voicePath = null;
+  }
+
+  void _ensureTextInputReady() {
+    if (_isVoiceRecording && !_voiceStopwatch.isRunning && !_isVoiceSending) {
+      _resetVoiceUiState();
+    }
+    if (!_focusNode.hasFocus) {
+      _focusNode.requestFocus();
+    }
+  }
+
   void _send() {
-    if (_isVoiceRecording || _isVoiceSending) {
+    debugPrint(
+      '[CHAT_OPS][UI][INPUT_SEND] hasOnSend=${widget.onSend != null} '
+      'isVoiceRecording=$_isVoiceRecording isVoiceSending=$_isVoiceSending '
+      'textLength=${_controller.text.trim().length}',
+    );
+    if (_isVoiceRecording) {
       return;
     }
     final value = _controller.text;
@@ -4951,7 +5789,9 @@ class _MessageInputState extends State<_MessageInput> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           IconButton(
-            tooltip: _isVoiceRecording ? 'Cancel recording' : 'Attach',
+            tooltip: _isVoiceRecording
+                ? AppLocalizations.of(context).voiceCancelRecording
+                : AppLocalizations.of(context).attachmentTooltip,
             onPressed: _isVoiceRecording
                 ? _cancelVoiceRecording
                 : _toggleAttachmentMenu,
@@ -4984,66 +5824,77 @@ class _MessageInputState extends State<_MessageInput> {
               child: Stack(
                 alignment: Alignment.centerLeft,
                 children: [
-                  Shortcuts(
-                    shortcuts: const {
-                      SingleActivator(LogicalKeyboardKey.enter):
-                          _SendMessageIntent(),
-                    },
-                    child: Actions(
-                      actions: {
-                        _SendMessageIntent: CallbackAction<_SendMessageIntent>(
-                          onInvoke: (_) {
-                            _send();
-                            return null;
-                          },
-                        ),
+                  GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _ensureTextInputReady,
+                    child: Shortcuts(
+                      shortcuts: const {
+                        SingleActivator(LogicalKeyboardKey.enter):
+                            _SendMessageIntent(),
                       },
-                      child: TextField(
-                        controller: _controller,
-                        focusNode: _focusNode,
-                        enabled: !_isVoiceRecording && !_isVoiceSending,
-                        inputFormatters: [
-                          LengthLimitingTextInputFormatter(
-                            _maxChatMessageLength,
-                          ),
-                        ],
-                        keyboardType: TextInputType.multiline,
-                        maxLines: null,
-                        onChanged: (value) {
-                          widget.onChanged(value);
-                          setState(() {});
-                        },
-                        textInputAction: TextInputAction.newline,
-                        cursorColor: const Color(0xff5aa4e8),
-                        style: const TextStyle(
-                          color: Color(0xff111b21),
-                          fontSize: 15,
-                          height: 22 / 15,
-                        ),
-                        decoration:
-                            const InputDecoration(
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              disabledBorder: InputBorder.none,
-                              filled: false,
-                              fillColor: Colors.transparent,
-                              hoverColor: Colors.transparent,
-                              isCollapsed: true,
-                              contentPadding: EdgeInsets.zero,
-                            ).copyWith(
-                              hintText: 'Write a message...',
-                              hintStyle: const TextStyle(
-                                color: Color(0xff9a9a9a),
-                                fontSize: 15,
-                                height: 22 / 15,
-                                fontWeight: FontWeight.w400,
+                      child: Actions(
+                        actions: {
+                          _SendMessageIntent:
+                              CallbackAction<_SendMessageIntent>(
+                                onInvoke: (_) {
+                                  _send();
+                                  return null;
+                                },
                               ),
+                        },
+                        child: TextField(
+                          controller: _controller,
+                          focusNode: _focusNode,
+                          enabled:
+                              !_isVoiceRecording || !_voiceStopwatch.isRunning,
+                          readOnly:
+                              _isVoiceRecording && _voiceStopwatch.isRunning,
+                          inputFormatters: [
+                            LengthLimitingTextInputFormatter(
+                              _maxChatMessageLength,
                             ),
+                          ],
+                          keyboardType: TextInputType.multiline,
+                          maxLines: null,
+                          onTap: _ensureTextInputReady,
+                          onChanged: (value) {
+                            widget.onChanged(value);
+                            setState(() {});
+                          },
+                          textInputAction: TextInputAction.newline,
+                          cursorColor: const Color(0xff5aa4e8),
+                          style: const TextStyle(
+                            color: Color(0xff111b21),
+                            fontSize: 15,
+                            height: 22 / 15,
+                          ),
+                          decoration:
+                              const InputDecoration(
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                disabledBorder: InputBorder.none,
+                                filled: false,
+                                fillColor: Colors.transparent,
+                                hoverColor: Colors.transparent,
+                                isCollapsed: true,
+                                contentPadding: EdgeInsets.zero,
+                              ).copyWith(
+                                hintText: AppLocalizations.of(
+                                  context,
+                                ).chatInputWriteMessageHint,
+                                hintStyle: const TextStyle(
+                                  color: Color(0xff9a9a9a),
+                                  fontSize: 15,
+                                  height: 22 / 15,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                        ),
                       ),
                     ),
                   ),
-                  if (_isVoiceRecording || _isVoiceSending)
+                  if (_isVoiceRecording)
                     Positioned.fill(
                       child: Container(
                         decoration: BoxDecoration(
@@ -5139,7 +5990,7 @@ class _MessageInputState extends State<_MessageInput> {
                 ? AppLocalizations.of(context).mediaSend
                 : hasText
                 ? widget.hintText
-                : 'Voice',
+                : AppLocalizations.of(context).voiceInputTooltip,
             onPressed: _isVoiceSending
                 ? null
                 : _isVoiceRecording

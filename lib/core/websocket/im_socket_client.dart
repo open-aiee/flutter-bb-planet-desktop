@@ -69,6 +69,7 @@ class ImSocketClient {
 
     final socket = io.io(socketUrl, options);
     _socket = socket;
+    final connectionCertificate = _certificate;
 
     socket
       ..onConnect((_) {
@@ -103,10 +104,12 @@ class ImSocketClient {
         debugPrint('[CHAT_OPS][SOCKET][INBOUND_RAW] $payload');
         final data = _extractEventData(payload);
         if (data is Map<String, dynamic>) {
+          data['__socketCertificate'] = connectionCertificate;
           debugPrint('[CHAT_OPS][SOCKET][INBOUND_DATA] $data');
           _messageController.add(data);
         } else if (data is Map) {
           final mapped = _asMap(data);
+          mapped['__socketCertificate'] = connectionCertificate;
           debugPrint('[CHAT_OPS][SOCKET][INBOUND_DATA] $mapped');
           _messageController.add(mapped);
         }
@@ -116,8 +119,11 @@ class ImSocketClient {
         final data = _extractEventData(payload);
         final event = ImClientIndexEvent.fromPayload(data);
         if (event != null) {
-          debugPrint('[CHAT_OPS][SOCKET][CLIENT_INDEX_DATA] $event');
-          _clientIndexController.add(event);
+          final scopedEvent = event.copyWith(
+            socketCertificate: connectionCertificate,
+          );
+          debugPrint('[CHAT_OPS][SOCKET][CLIENT_INDEX_DATA] $scopedEvent');
+          _clientIndexController.add(scopedEvent);
         }
       })
       ..connect();
@@ -147,6 +153,7 @@ class ImSocketClient {
   }
 
   Future<ImSendAck> sendTextMessage({
+    required int senderUserId,
     required int roomId,
     required String text,
     required String clientMessageId,
@@ -164,6 +171,7 @@ class ImSocketClient {
       'msgId': 100,
       'cid': clientMessageId,
     };
+    debugPrint('[CHAT_OPS][SOCKET][SEND_CHAT_PAYLOAD] $payload');
     final completer = Completer<ImSendAck>();
     _socket!.emitWithAck(
       _sendChatEvent,
@@ -182,6 +190,7 @@ class ImSocketClient {
   }
 
   Future<ImSendAck> sendEmojiGameMessage({
+    required int senderUserId,
     required int roomId,
     required String type,
     required int value,
@@ -202,6 +211,7 @@ class ImSocketClient {
       'cid': clientMessageId,
       'msgData': msgData,
     };
+    debugPrint('[CHAT_OPS][SOCKET][SEND_EMOJI_GAME_PAYLOAD] $payload');
     final completer = Completer<ImSendAck>();
     _socket!.emitWithAck(
       _sendChatEvent,
@@ -220,6 +230,7 @@ class ImSocketClient {
   }
 
   Future<ImSendAck> sendMediaMessage({
+    required int senderUserId,
     required int roomId,
     required List<Map<String, dynamic>> msgData,
     required String clientMessageId,
@@ -238,6 +249,7 @@ class ImSocketClient {
       'cid': clientMessageId,
       'msgData': msgData,
     };
+    debugPrint('[CHAT_OPS][SOCKET][SEND_MEDIA_PAYLOAD] $payload');
     final completer = Completer<ImSendAck>();
     _socket!.emitWithAck(
       _sendChatEvent,
@@ -434,12 +446,24 @@ class ImClientIndexEvent {
     required this.userId,
     this.curMsgIndex,
     this.readMsgIndex,
+    this.socketCertificate,
   });
 
   final int roomId;
   final int userId;
   final int? curMsgIndex;
   final int? readMsgIndex;
+  final String? socketCertificate;
+
+  ImClientIndexEvent copyWith({String? socketCertificate}) {
+    return ImClientIndexEvent(
+      roomId: roomId,
+      userId: userId,
+      curMsgIndex: curMsgIndex,
+      readMsgIndex: readMsgIndex,
+      socketCertificate: socketCertificate ?? this.socketCertificate,
+    );
+  }
 
   static ImClientIndexEvent? fromPayload(Object? payload) {
     final source = payload is Map
@@ -464,7 +488,8 @@ class ImClientIndexEvent {
   @override
   String toString() {
     return 'ImClientIndexEvent(roomId: $roomId, userId: $userId, '
-        'curMsgIndex: $curMsgIndex, readMsgIndex: $readMsgIndex)';
+        'curMsgIndex: $curMsgIndex, readMsgIndex: $readMsgIndex, '
+        'socketCertificateSet: ${socketCertificate?.isNotEmpty == true})';
   }
 }
 
@@ -516,6 +541,8 @@ class ImSendAck {
     this.roomId,
     this.sendTime,
     this.message,
+    this.event,
+    this.rawPayload,
   });
 
   final bool success;
@@ -523,11 +550,36 @@ class ImSendAck {
   final int? roomId;
   final int? sendTime;
   final String? message;
+  final String? event;
+  final String? rawPayload;
+
+  String failureSummary({String fallback = 'Message send failed'}) {
+    if (success) {
+      return '';
+    }
+    final parts = <String>[];
+    final eventValue = event?.trim();
+    if (eventValue != null && eventValue.isNotEmpty) {
+      parts.add('event=$eventValue');
+    }
+    final messageValue = message?.trim();
+    if (messageValue != null && messageValue.isNotEmpty) {
+      parts.add('message=$messageValue');
+    }
+    final rawValue = rawPayload?.trim();
+    if (rawValue != null && rawValue.isNotEmpty) {
+      parts.add('raw=$rawValue');
+    }
+    return parts.isEmpty ? fallback : parts.join('; ');
+  }
 
   factory ImSendAck.fromPayload(dynamic payload) {
     final source = _unwrap(payload);
     if (source is! Map) {
-      return const ImSendAck(success: false);
+      return ImSendAck(
+        success: false,
+        rawPayload: _payloadToString(payload),
+      );
     }
     final map = source.map((key, value) => MapEntry(key.toString(), value));
     final data = map['data'] is Map
@@ -541,6 +593,8 @@ class ImSendAck {
       roomId: _toNullableInt(data['roomId']),
       sendTime: _toNullableInt(data['sendTime'] ?? data['timestamp']),
       message: _messageFrom(map),
+      event: map['event']?.toString(),
+      rawPayload: _payloadToString(map),
     );
   }
 
@@ -586,6 +640,14 @@ class ImSendAck {
       return message;
     }
     return map['data']?.toString();
+  }
+
+  static String _payloadToString(Object? payload) {
+    try {
+      return jsonEncode(payload);
+    } catch (_) {
+      return payload.toString();
+    }
   }
 
   static int? _toNullableInt(Object? value) {

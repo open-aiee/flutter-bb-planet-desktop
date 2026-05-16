@@ -49,7 +49,7 @@ class _OperatorLoginScreenState extends ConsumerState<OperatorLoginScreen> {
                       flex: 7,
                       child: Transform.translate(
                         offset: const Offset(0, -30),
-                        child: const _QrLoginInstructions(),
+                        child: _QrLoginInstructions(l10n: l10n),
                       ),
                     ),
                     const SizedBox(width: 150),
@@ -87,31 +87,30 @@ class _OperatorLoginScreenState extends ConsumerState<OperatorLoginScreen> {
 }
 
 class _QrLoginInstructions extends StatelessWidget {
-  const _QrLoginInstructions();
+  const _QrLoginInstructions({required this.l10n});
+
+  final AppLocalizations l10n;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'To use Desktop on your computer:',
-          style: TextStyle(
+          l10n.loginQrTitle,
+          style: const TextStyle(
             color: Color(0xff111b21),
             fontSize: 28,
             height: 36 / 28,
             fontWeight: FontWeight.w300,
           ),
         ),
-        SizedBox(height: 34),
-        _LoginStep(index: 1, text: 'Open App on your phone'),
-        _LoginStep(index: 2, text: 'Find the top right corner of my page'),
-        _LoginStep(index: 3, text: 'Tap on QR'),
-        _LoginStep(
-          index: 4,
-          text: 'Point your phone to this screen to capture the code',
-        ),
+        const SizedBox(height: 34),
+        _LoginStep(index: 1, text: l10n.loginQrStepOpenApp),
+        _LoginStep(index: 2, text: l10n.loginQrStepFindQr),
+        _LoginStep(index: 3, text: l10n.loginQrStepTapQr),
+        _LoginStep(index: 4, text: l10n.loginQrStepScanCode),
       ],
     );
   }
@@ -177,9 +176,9 @@ class _DesktopQrPanel extends StatelessWidget {
           child: const CustomPaint(painter: _QrCodePlaceholderPainter()),
         ),
         const SizedBox(height: 18),
-        const Text(
-          'Scan to sign in',
-          style: TextStyle(
+        Text(
+          AppLocalizations.of(context).loginQrScanToSignIn,
+          style: const TextStyle(
             color: Color(0xff54656f),
             fontSize: 14,
             height: 20 / 14,

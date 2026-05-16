@@ -1,66 +1,90 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import '../../../core/security/secure_store_provider.dart';
-import '../../../core/storage/encrypted_cache_store.dart';
+import '../../../core/storage/chat_ops_sqlite_database.dart';
 import '../domain/local_chat_peer_profile.dart';
-import 'local_chat_message_store.dart';
 
 final localChatPeerProfileStoreProvider =
     FutureProvider<LocalChatPeerProfileStore>((ref) async {
-      final secureStore = ref.read(secureStoreProvider);
-      final cacheKey = await readOrCreateMessageCacheKey(secureStore);
-      final box = await EncryptedCacheStore(
-        encryptionKey: EncryptedCacheStore.normalizeKey(cacheKey),
-      ).openBox('chat_peer_profiles_v1');
-      return LocalChatPeerProfileStore(box);
+      final database = await ref.watch(chatOpsSqliteDatabaseProvider.future);
+      return LocalChatPeerProfileStore(database);
     });
 
 class LocalChatPeerProfileStore {
-  const LocalChatPeerProfileStore(this._box);
+  const LocalChatPeerProfileStore(this._database);
 
-  final Box<String> _box;
+  static const _table = 'chat_peer_profiles';
+
+  final Database _database;
 
   Future<void> upsert(LocalChatPeerProfile profile) async {
     if (profile.appUserId <= 0 || profile.peerUserId <= 0) {
       return;
     }
-    await _box.put(
-      _storageKey(profile.appUserId, profile.peerUserId),
-      jsonEncode(profile.toJson()),
+    await _database.insert(
+      _table,
+      _toRow(profile),
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    await _box.flush();
     debugPrint(
-      '[CHAT_OPS][LOCAL][PROFILE_STORE] upsert '
+      '[CHAT_OPS][LOCAL][PROFILE_STORE] upsert sqlite '
       'sender=${profile.appUserId} peer=${profile.peerUserId} '
-      'avatar=${profile.avatarUrl.isNotEmpty} boxLength=${_box.length}',
+      'avatar=${profile.avatarUrl.isNotEmpty}',
     );
   }
 
   Future<Map<int, LocalChatPeerProfile>> loadByAppUser({
     required int appUserId,
   }) async {
+    final rows = await _database.query(
+      _table,
+      where: 'app_user_id = ?',
+      whereArgs: [appUserId],
+      orderBy: 'updated_at DESC',
+    );
     final profiles = <int, LocalChatPeerProfile>{};
-    for (final raw in _box.values) {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) {
-        continue;
+    for (final row in rows) {
+      final profile = _fromRow(row);
+      if (profile.peerUserId > 0) {
+        profiles[profile.peerUserId] = profile;
       }
-      final profile = LocalChatPeerProfile.fromJson(
-        Map<String, dynamic>.from(decoded),
-      );
-      if (profile.appUserId != appUserId || profile.peerUserId <= 0) {
-        continue;
-      }
-      profiles[profile.peerUserId] = profile;
     }
     return profiles;
   }
 
-  String _storageKey(int appUserId, int peerUserId) {
-    return 'sender:$appUserId:direct-peer:$peerUserId';
+  Map<String, Object?> _toRow(LocalChatPeerProfile profile) {
+    return {
+      'app_user_id': profile.appUserId,
+      'peer_user_id': profile.peerUserId,
+      'display_name': profile.displayName,
+      'avatar_url': profile.avatarUrl,
+      'updated_at': profile.updatedAt.millisecondsSinceEpoch,
+    };
   }
+
+  LocalChatPeerProfile _fromRow(Map<String, Object?> row) {
+    return LocalChatPeerProfile(
+      appUserId: _asInt(row['app_user_id']),
+      peerUserId: _asInt(row['peer_user_id']),
+      displayName: row['display_name']?.toString() ?? '',
+      avatarUrl: row['avatar_url']?.toString() ?? '',
+      updatedAt: _dateFromMillis(row['updated_at']),
+    );
+  }
+}
+
+int _asInt(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+DateTime _dateFromMillis(Object? value) {
+  final millis = _asInt(value);
+  if (millis <= 0) {
+    return DateTime.now();
+  }
+  return DateTime.fromMillisecondsSinceEpoch(millis);
 }

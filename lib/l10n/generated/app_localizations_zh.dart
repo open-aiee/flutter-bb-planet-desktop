@@ -253,6 +253,90 @@ class AppLocalizationsZh extends AppLocalizations {
   String get voiceRecordFailed => '語音錄製失敗，請重試。';
 
   @override
+  String get voiceCancelRecording => '取消錄音';
+
+  @override
+  String get voiceInputTooltip => '語音';
+
+  @override
+  String get attachmentTooltip => '附件';
+
+  @override
+  String get chatInputWriteMessageHint => '輸入訊息...';
+
+  @override
+  String get chatOpenFailed => '無法開啟聊天。';
+
+  @override
+  String get chatPrivateAccountBlocked => '對方開啟了私密帳戶。';
+
+  @override
+  String get chatYouBlockedPeer => '你已拉黑對方。';
+
+  @override
+  String get chatYouWereBlocked => '你已被拉黑。';
+
+  @override
+  String get chatPeerClosedPrivateChat => '對方關閉了私聊。';
+
+  @override
+  String get dateToday => '今天';
+
+  @override
+  String get dateYesterday => '昨天';
+
+  @override
+  String get contactInfoBack => '返回';
+
+  @override
+  String get contactInfoTitle => '資料';
+
+  @override
+  String get contactInfoMessage => '訊息';
+
+  @override
+  String get contactInfoCall => '通話';
+
+  @override
+  String get contactInfoMore => '更多';
+
+  @override
+  String get contactInfoUsername => '用戶名';
+
+  @override
+  String get contactInfoLastSeenRecently => '最近上線';
+
+  @override
+  String get contactInfoAddContact => '新增聯絡人';
+
+  @override
+  String get contactInfoBlockUser => '封鎖用戶';
+
+  @override
+  String get contactInfoMedia => '媒體';
+
+  @override
+  String get contactInfoNoMedia => '暫無媒體';
+
+  @override
+  String get loginQrTitle => '若要在電腦上使用 Desktop：';
+
+  @override
+  String get loginQrStepOpenApp => '在手機上開啟 App';
+
+  @override
+  String get loginQrStepFindQr => '找到我的頁面右上角';
+
+  @override
+  String get loginQrStepTapQr => '點擊 QR';
+
+  @override
+  String get loginQrStepScanCode => '將手機對準此畫面以掃描代碼';
+
+  @override
+  String get loginQrScanToSignIn => '掃描登入';
+
+  @override
   String get workspaceUserOnline => '在線';
 
   @override
@@ -554,6 +638,90 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get voiceRecordFailed => '語音錄製失敗，請重試。';
+
+  @override
+  String get voiceCancelRecording => '取消錄音';
+
+  @override
+  String get voiceInputTooltip => '語音';
+
+  @override
+  String get attachmentTooltip => '附件';
+
+  @override
+  String get chatInputWriteMessageHint => '輸入訊息...';
+
+  @override
+  String get chatOpenFailed => '無法開啟聊天。';
+
+  @override
+  String get chatPrivateAccountBlocked => '對方開啟了私密帳戶。';
+
+  @override
+  String get chatYouBlockedPeer => '你已拉黑對方。';
+
+  @override
+  String get chatYouWereBlocked => '你已被拉黑。';
+
+  @override
+  String get chatPeerClosedPrivateChat => '對方關閉了私聊。';
+
+  @override
+  String get dateToday => '今天';
+
+  @override
+  String get dateYesterday => '昨天';
+
+  @override
+  String get contactInfoBack => '返回';
+
+  @override
+  String get contactInfoTitle => '資料';
+
+  @override
+  String get contactInfoMessage => '訊息';
+
+  @override
+  String get contactInfoCall => '通話';
+
+  @override
+  String get contactInfoMore => '更多';
+
+  @override
+  String get contactInfoUsername => '用戶名';
+
+  @override
+  String get contactInfoLastSeenRecently => '最近上線';
+
+  @override
+  String get contactInfoAddContact => '新增聯絡人';
+
+  @override
+  String get contactInfoBlockUser => '封鎖用戶';
+
+  @override
+  String get contactInfoMedia => '媒體';
+
+  @override
+  String get contactInfoNoMedia => '暫無媒體';
+
+  @override
+  String get loginQrTitle => '若要在電腦上使用 Desktop：';
+
+  @override
+  String get loginQrStepOpenApp => '在手機上開啟 App';
+
+  @override
+  String get loginQrStepFindQr => '找到我的頁面右上角';
+
+  @override
+  String get loginQrStepTapQr => '點擊 QR';
+
+  @override
+  String get loginQrStepScanCode => '將手機對準此畫面以掃描代碼';
+
+  @override
+  String get loginQrScanToSignIn => '掃描登入';
 
   @override
   String get workspaceUserOnline => '在線';

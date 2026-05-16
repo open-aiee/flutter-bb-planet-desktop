@@ -9,6 +9,10 @@ import 'desktop_data_directory.dart';
 class EncryptedCacheStore {
   EncryptedCacheStore({required this.encryptionKey});
 
+  static const disableEncryptionForDebug = bool.fromEnvironment(
+    'DISABLE_LOCAL_CACHE_ENCRYPTION',
+  );
+
   final List<int> encryptionKey;
 
   Future<Box<String>> openBox(String name) async {
@@ -16,6 +20,10 @@ class EncryptedCacheStore {
     final cacheDirectory = Directory(p.join(directory.path, 'cache'));
     await cacheDirectory.create(recursive: true);
     Hive.init(cacheDirectory.path);
+
+    if (disableEncryptionForDebug) {
+      return Hive.openBox<String>('${name}_plain_debug');
+    }
 
     return Hive.openBox<String>(
       name,

@@ -265,6 +265,92 @@ class AppLocalizationsVi extends AppLocalizations {
   String get voiceRecordFailed => 'Ghi âm thất bại. Vui lòng thử lại.';
 
   @override
+  String get voiceCancelRecording => 'Hủy ghi âm';
+
+  @override
+  String get voiceInputTooltip => 'Giọng nói';
+
+  @override
+  String get attachmentTooltip => 'Đính kèm';
+
+  @override
+  String get chatInputWriteMessageHint => 'Viết tin nhắn...';
+
+  @override
+  String get chatOpenFailed => 'Không thể mở cuộc trò chuyện.';
+
+  @override
+  String get chatPrivateAccountBlocked =>
+      'Đối phương đã bật tài khoản riêng tư.';
+
+  @override
+  String get chatYouBlockedPeer => 'Bạn đã chặn đối phương.';
+
+  @override
+  String get chatYouWereBlocked => 'Bạn đã bị chặn.';
+
+  @override
+  String get chatPeerClosedPrivateChat => 'Đối phương đã đóng chat riêng.';
+
+  @override
+  String get dateToday => 'HÔM NAY';
+
+  @override
+  String get dateYesterday => 'HÔM QUA';
+
+  @override
+  String get contactInfoBack => 'Quay lại';
+
+  @override
+  String get contactInfoTitle => 'Thông tin';
+
+  @override
+  String get contactInfoMessage => 'Tin nhắn';
+
+  @override
+  String get contactInfoCall => 'Gọi';
+
+  @override
+  String get contactInfoMore => 'Thêm';
+
+  @override
+  String get contactInfoUsername => 'tên người dùng';
+
+  @override
+  String get contactInfoLastSeenRecently => 'hoạt động gần đây';
+
+  @override
+  String get contactInfoAddContact => 'Thêm liên hệ';
+
+  @override
+  String get contactInfoBlockUser => 'Chặn người dùng';
+
+  @override
+  String get contactInfoMedia => 'Media';
+
+  @override
+  String get contactInfoNoMedia => 'Chưa có media';
+
+  @override
+  String get loginQrTitle => 'Để dùng Desktop trên máy tính:';
+
+  @override
+  String get loginQrStepOpenApp => 'Mở App trên điện thoại';
+
+  @override
+  String get loginQrStepFindQr => 'Tìm góc trên bên phải của trang cá nhân';
+
+  @override
+  String get loginQrStepTapQr => 'Bấm vào QR';
+
+  @override
+  String get loginQrStepScanCode =>
+      'Hướng điện thoại vào màn hình này để quét mã';
+
+  @override
+  String get loginQrScanToSignIn => 'Quét để đăng nhập';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override

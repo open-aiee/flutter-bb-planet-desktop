@@ -1,50 +1,34 @@
-import 'dart:convert';
-import 'dart:math';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import '../../../core/security/secure_store_provider.dart';
-import '../../../core/security/secure_store.dart';
-import '../../../core/storage/encrypted_cache_store.dart';
+import '../../../core/storage/chat_ops_sqlite_database.dart';
 import '../domain/local_chat_message.dart';
 
 final localChatMessageStoreProvider = FutureProvider<LocalChatMessageStore>((
   ref,
 ) async {
-  final secureStore = ref.read(secureStoreProvider);
-  final cacheKey = await readOrCreateMessageCacheKey(secureStore);
-
-  final box = await EncryptedCacheStore(
-    encryptionKey: EncryptedCacheStore.normalizeKey(cacheKey),
-  ).openBox('chat_messages_v1');
-  return LocalChatMessageStore(box);
+  final database = await ref.watch(chatOpsSqliteDatabaseProvider.future);
+  return LocalChatMessageStore(database);
 });
 
-Future<String> readOrCreateMessageCacheKey(SecureStore secureStore) async {
-  var cacheKey = await secureStore.read('chat.messageCache.encryptionKey');
-  if (cacheKey == null || cacheKey.isEmpty) {
-    cacheKey = _randomCacheKey();
-    await secureStore.write('chat.messageCache.encryptionKey', cacheKey);
-  }
-  return cacheKey;
-}
-
 class LocalChatMessageStore {
-  const LocalChatMessageStore(this._box);
+  const LocalChatMessageStore(this._database);
 
-  final Box<String> _box;
+  static const _table = 'chat_messages';
+
+  final Database _database;
 
   Future<void> upsert(LocalChatMessage message) async {
-    final key = _storageKey(message);
-    await _box.put(key, jsonEncode(message.toJson()));
-    await _box.flush();
+    await _database.insert(
+      _table,
+      _toRow(message),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
     debugPrint(
-      '[CHAT_OPS][LOCAL][MESSAGE_STORE] upsert '
+      '[CHAT_OPS][LOCAL][MESSAGE_STORE] upsert sqlite '
       'sender=${message.appUserId} peer=${message.peerUserId} '
-      'local=${message.localId} server=${message.serverMessageId} '
-      'boxLength=${_box.length}',
+      'local=${message.localId} server=${message.serverMessageId}',
     );
   }
 
@@ -53,21 +37,13 @@ class LocalChatMessageStore {
     required int peerUserId,
     int? roomId,
   }) async {
-    final messages = <LocalChatMessage>[];
-    for (final raw in _box.values) {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) {
-        continue;
-      }
-      final message = LocalChatMessage.fromJson(
-        Map<String, dynamic>.from(decoded),
-      );
-      if (message.appUserId != appUserId || message.peerUserId != peerUserId) {
-        continue;
-      }
-      messages.add(message);
-    }
-
+    final rows = await _database.query(
+      _table,
+      where: 'app_user_id = ? AND peer_user_id = ?',
+      whereArgs: [appUserId, peerUserId],
+      orderBy: 'created_at ASC, updated_at ASC',
+    );
+    final messages = rows.map(_fromRow).toList(growable: false);
     return _deduplicate(messages)
       ..sort((left, right) => left.createdAt.compareTo(right.createdAt));
   }
@@ -75,22 +51,16 @@ class LocalChatMessageStore {
   Future<Map<int, LocalChatMessage>> loadLatestByAppUser({
     required int appUserId,
   }) async {
+    final rows = await _database.query(
+      _table,
+      where: 'app_user_id = ? AND peer_user_id > 0',
+      whereArgs: [appUserId],
+      orderBy: 'created_at DESC, updated_at DESC',
+    );
     final latestByPeer = <int, LocalChatMessage>{};
-    for (final raw in _box.values) {
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) {
-        continue;
-      }
-      final message = LocalChatMessage.fromJson(
-        Map<String, dynamic>.from(decoded),
-      );
-      if (message.appUserId != appUserId || message.peerUserId <= 0) {
-        continue;
-      }
-      final current = latestByPeer[message.peerUserId];
-      if (current == null || message.createdAt.isAfter(current.createdAt)) {
-        latestByPeer[message.peerUserId] = message;
-      }
+    for (final row in rows) {
+      final message = _fromRow(row);
+      latestByPeer.putIfAbsent(message.peerUserId, () => message);
     }
     return latestByPeer;
   }
@@ -103,44 +73,96 @@ class LocalChatMessageStore {
     if (roomId <= 0 || readMsgIndex <= 0) {
       return const [];
     }
+
+    final rows = await _database.query(
+      _table,
+      where:
+          'app_user_id = ? AND room_id = ? AND direction = ? '
+          'AND send_status NOT IN (?, ?) AND server_message_id IS NOT NULL',
+      whereArgs: [
+        appUserId,
+        roomId,
+        ChatMessageDirection.outgoing.name,
+        ChatMessageSendStatus.read.name,
+        ChatMessageSendStatus.failed.name,
+      ],
+    );
+
     final updatedMessages = <LocalChatMessage>[];
-    for (final key in _box.keys.toList(growable: false)) {
-      final raw = _box.get(key);
-      if (raw == null) {
-        continue;
-      }
-      final decoded = jsonDecode(raw);
-      if (decoded is! Map) {
-        continue;
-      }
-      final message = LocalChatMessage.fromJson(
-        Map<String, dynamic>.from(decoded),
-      );
+    final batch = _database.batch();
+    final now = DateTime.now();
+    for (final row in rows) {
+      final message = _fromRow(row);
       final serverId = int.tryParse(message.serverMessageId ?? '') ?? 0;
-      if (message.appUserId != appUserId ||
-          message.roomId != roomId ||
-          message.direction != ChatMessageDirection.outgoing ||
-          message.sendStatus == ChatMessageSendStatus.read ||
-          message.sendStatus == ChatMessageSendStatus.failed ||
-          serverId <= 0 ||
-          serverId > readMsgIndex) {
+      if (serverId <= 0 || serverId > readMsgIndex) {
         continue;
       }
       final updated = message.copyWith(
         sendStatus: ChatMessageSendStatus.read,
-        updatedAt: DateTime.now(),
+        updatedAt: now,
       );
-      await _box.put(key, jsonEncode(updated.toJson()));
+      batch.update(
+        _table,
+        _toRow(updated),
+        where: 'app_user_id = ? AND peer_user_id = ? AND local_id = ?',
+        whereArgs: [updated.appUserId, updated.peerUserId, updated.localId],
+      );
       updatedMessages.add(updated);
     }
     if (updatedMessages.isNotEmpty) {
-      await _box.flush();
+      await batch.commit(noResult: true);
     }
     return updatedMessages;
   }
 
-  String _storageKey(LocalChatMessage message) {
-    return '${message.conversationKey}:${message.localId}';
+  Map<String, Object?> _toRow(LocalChatMessage message) {
+    return {
+      'app_user_id': message.appUserId,
+      'peer_user_id': message.peerUserId,
+      'local_id': message.localId,
+      'conversation_key': message.conversationKey,
+      'room_id': message.roomId,
+      'direction': message.direction.name,
+      'text': message.text,
+      'created_at': message.createdAt.millisecondsSinceEpoch,
+      'updated_at': message.updatedAt.millisecondsSinceEpoch,
+      'send_status': message.sendStatus.name,
+      'client_message_id': message.clientMessageId,
+      'server_message_id': message.serverMessageId,
+      'error_message': message.errorMessage,
+      'send_type': message.sendType,
+      'msg_data': message.msgData,
+      'local_media_path': message.localMediaPath,
+    };
+  }
+
+  LocalChatMessage _fromRow(Map<String, Object?> row) {
+    return LocalChatMessage(
+      localId: row['local_id']?.toString() ?? '',
+      appUserId: _asInt(row['app_user_id']),
+      peerUserId: _asInt(row['peer_user_id']),
+      roomId: _asNullableInt(row['room_id']),
+      conversationKey: row['conversation_key']?.toString() ?? '',
+      direction: _enumByName(
+        ChatMessageDirection.values,
+        row['direction']?.toString(),
+        ChatMessageDirection.outgoing,
+      ),
+      text: row['text']?.toString() ?? '',
+      createdAt: _dateFromMillis(row['created_at']),
+      updatedAt: _dateFromMillis(row['updated_at']),
+      sendStatus: _enumByName(
+        ChatMessageSendStatus.values,
+        row['send_status']?.toString(),
+        ChatMessageSendStatus.pending,
+      ),
+      clientMessageId: row['client_message_id']?.toString(),
+      serverMessageId: row['server_message_id']?.toString(),
+      errorMessage: row['error_message']?.toString(),
+      sendType: _asIntWithFallback(row['send_type'], 1),
+      msgData: row['msg_data']?.toString(),
+      localMediaPath: row['local_media_path']?.toString(),
+    );
   }
 }
 
@@ -184,8 +206,43 @@ LocalChatMessage _preferServerMessage(
   return next.updatedAt.isAfter(current.updatedAt) ? next : current;
 }
 
-String _randomCacheKey() {
-  final random = Random.secure();
-  final bytes = List<int>.generate(32, (_) => random.nextInt(256));
-  return base64UrlEncode(bytes);
+int _asInt(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int _asIntWithFallback(Object? value, int fallback) {
+  if (value is int) {
+    return value;
+  }
+  return int.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
+int? _asNullableInt(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  if (value is int) {
+    return value;
+  }
+  return int.tryParse(value.toString());
+}
+
+DateTime _dateFromMillis(Object? value) {
+  final millis = _asInt(value);
+  if (millis <= 0) {
+    return DateTime.now();
+  }
+  return DateTime.fromMillisecondsSinceEpoch(millis);
+}
+
+T _enumByName<T extends Enum>(List<T> values, String? name, T fallback) {
+  for (final value in values) {
+    if (value.name == name) {
+      return value;
+    }
+  }
+  return fallback;
 }

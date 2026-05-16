@@ -38,11 +38,13 @@ class ImSessionManager {
   }
 
   Future<ImSendAck> sendTextMessage({
+    required int senderUserId,
     required int roomId,
     required String text,
     required String clientMessageId,
   }) {
     return _socketClient.sendTextMessage(
+      senderUserId: senderUserId,
       roomId: roomId,
       text: text,
       clientMessageId: clientMessageId,
@@ -50,12 +52,14 @@ class ImSessionManager {
   }
 
   Future<ImSendAck> sendEmojiGameMessage({
+    required int senderUserId,
     required int roomId,
     required String type,
     required int value,
     required String clientMessageId,
   }) {
     return _socketClient.sendEmojiGameMessage(
+      senderUserId: senderUserId,
       roomId: roomId,
       type: type,
       value: value,
@@ -64,11 +68,13 @@ class ImSessionManager {
   }
 
   Future<ImSendAck> sendMediaMessage({
+    required int senderUserId,
     required int roomId,
     required List<Map<String, dynamic>> msgData,
     required String clientMessageId,
   }) {
     return _socketClient.sendMediaMessage(
+      senderUserId: senderUserId,
       roomId: roomId,
       msgData: msgData,
       clientMessageId: clientMessageId,

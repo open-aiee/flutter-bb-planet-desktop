@@ -266,6 +266,93 @@ class AppLocalizationsEn extends AppLocalizations {
   String get voiceRecordFailed => 'Voice recording failed. Please try again.';
 
   @override
+  String get voiceCancelRecording => 'Cancel recording';
+
+  @override
+  String get voiceInputTooltip => 'Voice';
+
+  @override
+  String get attachmentTooltip => 'Attach';
+
+  @override
+  String get chatInputWriteMessageHint => 'Write a message...';
+
+  @override
+  String get chatOpenFailed => 'Unable to open chat.';
+
+  @override
+  String get chatPrivateAccountBlocked =>
+      'The other party has opened a private account.';
+
+  @override
+  String get chatYouBlockedPeer => 'You have blocked the other party.';
+
+  @override
+  String get chatYouWereBlocked => 'You have been blocked.';
+
+  @override
+  String get chatPeerClosedPrivateChat =>
+      'The other party closed the private chat.';
+
+  @override
+  String get dateToday => 'TODAY';
+
+  @override
+  String get dateYesterday => 'YESTERDAY';
+
+  @override
+  String get contactInfoBack => 'Back';
+
+  @override
+  String get contactInfoTitle => 'Info';
+
+  @override
+  String get contactInfoMessage => 'Message';
+
+  @override
+  String get contactInfoCall => 'Call';
+
+  @override
+  String get contactInfoMore => 'More';
+
+  @override
+  String get contactInfoUsername => 'username';
+
+  @override
+  String get contactInfoLastSeenRecently => 'last seen recently';
+
+  @override
+  String get contactInfoAddContact => 'Add Contact';
+
+  @override
+  String get contactInfoBlockUser => 'Block User';
+
+  @override
+  String get contactInfoMedia => 'Media';
+
+  @override
+  String get contactInfoNoMedia => 'No media yet';
+
+  @override
+  String get loginQrTitle => 'To use Desktop on your computer:';
+
+  @override
+  String get loginQrStepOpenApp => 'Open App on your phone';
+
+  @override
+  String get loginQrStepFindQr => 'Find the top right corner of my page';
+
+  @override
+  String get loginQrStepTapQr => 'Tap on QR';
+
+  @override
+  String get loginQrStepScanCode =>
+      'Point your phone to this screen to capture the code';
+
+  @override
+  String get loginQrScanToSignIn => 'Scan to sign in';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override
