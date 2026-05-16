@@ -141,6 +141,14 @@ class ChatConversationSummary {
     required this.topStatus,
     required this.readReceipt,
     required this.onlineStatus,
+    required this.nodisturbStatus,
+    required this.unreadCount,
+    required this.lastMessage,
+    required this.lastMessageTime,
+    required this.lastMessageId,
+    required this.lastSenderUserId,
+    required this.lastSendType,
+    required this.lastMessageStatus,
   });
 
   final int roomId;
@@ -152,6 +160,14 @@ class ChatConversationSummary {
   final int topStatus;
   final int readReceipt;
   final int onlineStatus;
+  final int nodisturbStatus;
+  final int unreadCount;
+  final String lastMessage;
+  final DateTime? lastMessageTime;
+  final int lastMessageId;
+  final int lastSenderUserId;
+  final int lastSendType;
+  final int lastMessageStatus;
 
   bool get isOnline => onlineStatus == 1;
 
@@ -177,6 +193,30 @@ class ChatConversationSummary {
       roomType: _asInt(json['roomType']),
       topStatus: _asInt(json['topStatus']),
       readReceipt: _asIntWithFallback(json['readReceipt'], 1),
+      nodisturbStatus: _asInt(json['nodisturbStatus']),
+      unreadCount: _asInt(
+        json['msgCount'] ?? json['unreadNum'] ?? json['redNum'],
+      ),
+      lastMessage: _firstNonEmptyString([
+        json['lastMsg'],
+        json['msg'],
+        json['content'],
+      ]),
+      lastMessageTime: _dateFromEpoch(
+        json['lastMsgTime'] ?? json['sendTime'] ?? json['updateTime'],
+      ),
+      lastMessageId: _asInt(json['msgId'] ?? json['lastMsgId'] ?? json['id']),
+      lastSenderUserId: _asInt(
+        json['sendId'] ??
+            json['sendUserId'] ??
+            json['userId'] ??
+            json['fromId'],
+      ),
+      lastSendType: _asInt(json['sendType']),
+      lastMessageStatus: _asIntWithFallback(
+        json['msgState'] ?? json['sendStatus'],
+        1,
+      ),
       onlineStatus: _firstNonZeroInt([
         _onlineDataValue(json['onlineData']),
         json['onlineStatus'],
@@ -187,6 +227,25 @@ class ChatConversationSummary {
         json['toOnlineStatus'],
       ]),
     );
+  }
+
+  static String _firstNonEmptyString(List<Object?> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+    return '';
+  }
+
+  static DateTime? _dateFromEpoch(Object? value) {
+    final raw = _asInt(value);
+    if (raw <= 0) {
+      return null;
+    }
+    final millis = raw < 10000000000 ? raw * 1000 : raw;
+    return DateTime.fromMillisecondsSinceEpoch(millis);
   }
 
   static int _asInt(Object? value) {

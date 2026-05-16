@@ -30,6 +30,38 @@ class _AppAccountHistoryDialogState
         .readLoginHistory();
   }
 
+  List<AppAccountHistoryEntry> _mergeCurrentAccount(
+    List<AppAccountHistoryEntry> accounts,
+    AppAccountAuthState appState,
+  ) {
+    final session = appState.session;
+    if (session == null) {
+      return accounts;
+    }
+    final exists = accounts.any(
+      (account) =>
+          (session.id > 0 && account.id == session.id) ||
+          (session.email.trim().isNotEmpty &&
+              account.email.trim().toLowerCase() ==
+                  session.email.trim().toLowerCase()),
+    );
+    if (exists) {
+      return accounts;
+    }
+    return [
+      AppAccountHistoryEntry(
+        id: session.id,
+        email: session.email,
+        displayName: session.displayName,
+        avatarUrl: session.avatarUrl ?? '',
+        password: '',
+        token: session.certificate,
+        updatedAt: DateTime.now(),
+      ),
+      ...accounts,
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -72,7 +104,10 @@ class _AppAccountHistoryDialogState
                       ),
                     );
                   }
-                  final accounts = snapshot.data ?? const [];
+                  final accounts = _mergeCurrentAccount(
+                    snapshot.data ?? const [],
+                    appState,
+                  );
                   if (accounts.isEmpty) {
                     return _EmptyHistory(
                       message: l10n.appAccountHistoryEmpty,

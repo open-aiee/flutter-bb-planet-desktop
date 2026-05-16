@@ -68,6 +68,20 @@ const _chatVideoExtensions = <String>[
   'webm',
 ];
 
+String _chatPreviewText(String text) {
+  return text
+      .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+      .replaceAll(RegExp(r' {2,}'), ' ')
+      .trim();
+}
+
+String _chatListTimeText(DateTime time) {
+  final local = time.toLocal();
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
 class _SelectedChatMedia {
   const _SelectedChatMedia({
     required this.path,
@@ -202,6 +216,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   final Map<int, Future<int?>> _directRoomRequests = {};
   final Map<String, List<LocalChatMessage>> _storedMessages = {};
   final Map<int, LocalChatMessage> _recentMessagesByPeer = {};
+  final Map<int, int> _localUnreadByPeer = {};
   final Map<int, LocalChatPeerProfile> _peerProfiles = {};
   Set<int>? _validChatPeerIds;
 
@@ -266,6 +281,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
           ? _searchConversations
           : _conversationsForTab(l10n, _selectedTab),
     );
+    final chatBadge = _chatBadgeText();
     final selectedConversationIndex = _selectedIndexIn(conversations);
     final selectedConversation = _selectedConversationFrom(conversations);
     final storageKey = selectedConversation == null
@@ -323,6 +339,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
             onSearchChanged: _onSearchChanged,
             onAppAccountTap: widget.onAppAccountTap,
             onSettingsTap: widget.onSettingsTap,
+            chatBadge: chatBadge,
             l10n: l10n,
           ),
           Expanded(
@@ -582,7 +599,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       }
       final latest = _recentMessagesByPeer[peerUserId];
       if (latest == null) {
-        return conversation;
+        return conversation.copyWith(unread: _effectiveUnread(conversation));
       }
       return conversation.copyWith(
         message: _conversationPreviewText(latest.text),
@@ -594,9 +611,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         deliveredRead:
             latest.direction == ChatMessageDirection.outgoing &&
             latest.sendStatus == ChatMessageSendStatus.read,
-        unread: latest.direction == ChatMessageDirection.incoming
-            ? conversation.unread
-            : 0,
+        unread: latest.direction == ChatMessageDirection.outgoing
+            ? 0
+            : _effectiveUnread(conversation),
       );
     }).toList();
   }
@@ -639,6 +656,27 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         (conversation) => !remotePeerIds.contains(conversation.targetUserId),
       ),
     ]);
+  }
+
+  String? _chatBadgeText() {
+    final unread = _chatConversationsWithLocalFallback().fold<int>(
+      0,
+      (total, conversation) => conversation.nodisturbStatus == 0
+          ? total + _effectiveUnread(conversation)
+          : total,
+    );
+    if (unread <= 0) {
+      return null;
+    }
+    return unread > 99 ? '99+' : unread.toString();
+  }
+
+  int _effectiveUnread(_Conversation conversation) {
+    final peerUserId = conversation.targetUserId;
+    if (peerUserId == null || peerUserId <= 0) {
+      return conversation.unread;
+    }
+    return _localUnreadByPeer[peerUserId] ?? conversation.unread;
   }
 
   List<_Conversation> _dedupeConversationsByPeer(
@@ -791,8 +829,14 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
 
   void _activateConversation(_Conversation conversation) {
     _activeConversationSyncTimer?.cancel();
+    final peerUserId = conversation.targetUserId;
+    if (peerUserId != null && peerUserId > 0) {
+      setState(() {
+        _localUnreadByPeer[peerUserId] = 0;
+      });
+    }
     unawaited(_loadStoredMessages(conversation));
-    if (conversation.targetUserId == null || conversation.targetUserId! <= 0) {
+    if (peerUserId == null || peerUserId <= 0) {
       return;
     }
     unawaited(_syncActiveConversation());
@@ -1090,9 +1134,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         'sender=${session.id} peer=$peerUserId local=${localMessage.localId}',
       );
       sendStage = 'open_room';
-      final roomId = await _ensureConversationRoomId(
-        conversation,
-      );
+      final roomId = await _ensureConversationRoomId(conversation);
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
       }
@@ -1275,9 +1317,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         'sender=${session.id} peer=$peerUserId local=${localMessage.localId} '
         'gameType=${game.type} value=${game.value}',
       );
-      final roomId = await _ensureConversationRoomId(
-        conversation,
-      );
+      final roomId = await _ensureConversationRoomId(conversation);
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
       }
@@ -1418,9 +1458,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         'sender=${session.id} peer=$peerUserId local=${localMessage.localId} '
         'path=${media.path}',
       );
-      final roomId = await _ensureConversationRoomId(
-        conversation,
-      );
+      final roomId = await _ensureConversationRoomId(conversation);
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
       }
@@ -1593,9 +1631,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
         'sender=${session.id} peer=$peerUserId local=${localMessage.localId} '
         'path=${voice.path} duration=$durationSeconds',
       );
-      final roomId = await _ensureConversationRoomId(
-        conversation,
-      );
+      final roomId = await _ensureConversationRoomId(conversation);
       if (roomId == null || roomId <= 0) {
         throw const DirectChatException('Unable to open chat.');
       }
@@ -2021,6 +2057,20 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     setState(() {
       _upsertStoredMessageInMemory(peerKey, localMessage);
       _rememberRecentMessageInMemory(localMessage);
+      if (isOutgoing || activeConversation?.targetUserId == peerUserId) {
+        _localUnreadByPeer[peerUserId] = 0;
+      } else {
+        final base =
+            _localUnreadByPeer[peerUserId] ??
+            _chatConversations
+                .where(
+                  (conversation) => conversation.targetUserId == peerUserId,
+                )
+                .map((conversation) => conversation.unread)
+                .firstOrNull ??
+            0;
+        _localUnreadByPeer[peerUserId] = base + 1;
+      }
     });
     if (!isOutgoing) {
       _reportActiveConversationReadIndex(localMessage);
@@ -2211,7 +2261,13 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       final validPeerIds = userInfoById.keys.toSet();
       final conversations = records
           .where((record) => validPeerIds.contains(record.peerUserId))
-          .map((record) => _ConversationData.fromChatConversation(l10n, record))
+          .map(
+            (record) => _ConversationData.fromChatConversation(
+              l10n,
+              record,
+              session.id,
+            ),
+          )
           .map((conversation) {
             final peerUserId = conversation.targetUserId;
             final userInfo = peerUserId == null
@@ -2221,9 +2277,6 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
                 ? conversation
                 : conversation.copyWith(
                     name: userInfo.displayName,
-                    message: userInfo.isOnline
-                        ? l10n.workspaceUserOnline
-                        : l10n.appAccountStatusOffline,
                     avatarUrl: userInfo.avatarUrl,
                     isOnline: userInfo.isOnline,
                   );
@@ -2342,17 +2395,11 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   }
 
   String _conversationPreviewText(String text) {
-    return text
-        .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
-        .replaceAll(RegExp(r' {2,}'), ' ')
-        .trim();
+    return _chatPreviewText(text);
   }
 
   String _formatConversationTime(DateTime time) {
-    final local = time.toLocal();
-    final hour = local.hour.toString().padLeft(2, '0');
-    final minute = local.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
+    return _chatListTimeText(time);
   }
 
   void _syncImSocketSession() {
@@ -2385,6 +2432,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _directRoomIds.clear();
       _storedMessages.clear();
       _recentMessagesByPeer.clear();
+      _localUnreadByPeer.clear();
       _peerProfiles.clear();
     });
   }
@@ -2420,6 +2468,7 @@ class _LeftSection extends StatelessWidget {
     required this.onSearchChanged,
     required this.onAppAccountTap,
     required this.onSettingsTap,
+    required this.chatBadge,
     required this.l10n,
   });
 
@@ -2439,6 +2488,7 @@ class _LeftSection extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onAppAccountTap;
   final VoidCallback onSettingsTap;
+  final String? chatBadge;
   final AppLocalizations l10n;
 
   @override
@@ -2457,6 +2507,7 @@ class _LeftSection extends StatelessWidget {
             onTabSelected: onTabSelected,
             onAppAccountTap: onAppAccountTap,
             onSettingsTap: onSettingsTap,
+            chatBadge: chatBadge,
             l10n: l10n,
           ),
           Expanded(
@@ -2489,6 +2540,7 @@ class _NavigationRail extends StatelessWidget {
     required this.onTabSelected,
     required this.onAppAccountTap,
     required this.onSettingsTap,
+    required this.chatBadge,
     required this.l10n,
   });
 
@@ -2501,6 +2553,7 @@ class _NavigationRail extends StatelessWidget {
   final ValueChanged<_RailTab> onTabSelected;
   final VoidCallback onAppAccountTap;
   final VoidCallback onSettingsTap;
+  final String? chatBadge;
   final AppLocalizations l10n;
 
   @override
@@ -2519,7 +2572,7 @@ class _NavigationRail extends StatelessWidget {
                 _RailItem(
                   icon: Icons.chat_bubble_rounded,
                   label: l10n.navChats,
-                  badge: '6',
+                  badge: chatBadge,
                   active: selectedTab == _RailTab.chats,
                   onTap: () => onTabSelected(_RailTab.chats),
                 ),
@@ -3230,7 +3283,7 @@ class _ConversationTile extends StatelessWidget {
                     const SizedBox(height: 6),
                     if (item.unread > 0)
                       Container(
-                        width: 20,
+                        width: item.unread > 99 ? 30 : 20,
                         height: 20,
                         decoration: const BoxDecoration(
                           color: Color(0xff21c563),
@@ -3238,10 +3291,10 @@ class _ConversationTile extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: Text(
-                          '${item.unread}',
+                          item.unread > 99 ? '99+' : '${item.unread}',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 10,
+                            fontSize: 9,
                             height: 1,
                             fontWeight: FontWeight.w700,
                           ),
@@ -8136,6 +8189,7 @@ class _Conversation {
     this.deliveredRead = false,
     this.readReceiptEnabled = true,
     this.isOnline = false,
+    this.nodisturbStatus = 0,
     this.unread = 0,
   });
 
@@ -8153,6 +8207,7 @@ class _Conversation {
   final bool deliveredRead;
   final bool readReceiptEnabled;
   final bool isOnline;
+  final int nodisturbStatus;
   final int unread;
 
   _Conversation copyWith({
@@ -8180,6 +8235,7 @@ class _Conversation {
       deliveredRead: deliveredRead ?? this.deliveredRead,
       readReceiptEnabled: readReceiptEnabled,
       isOnline: isOnline ?? this.isOnline,
+      nodisturbStatus: nodisturbStatus,
       unread: unread ?? this.unread,
     );
   }
@@ -8216,25 +8272,40 @@ class _ConversationData {
   static _Conversation fromChatConversation(
     AppLocalizations l10n,
     ChatConversationSummary conversation,
+    int appUserId,
   ) {
     final displayName = conversation.displayName;
     final initial = displayName.characters.isEmpty
         ? '#'
         : displayName.characters.first.toUpperCase();
+    final hasLastMessage = conversation.lastMessage.trim().isNotEmpty;
+    final isOutgoingLastMessage = conversation.lastSenderUserId == appUserId;
     return _Conversation(
       name: displayName,
-      message: conversation.isOnline
+      message: hasLastMessage
+          ? _chatPreviewText(conversation.lastMessage)
+          : conversation.isOnline
           ? l10n.workspaceUserOnline
           : l10n.appAccountStatusOffline,
-      time: '',
+      time: conversation.lastMessageTime == null
+          ? ''
+          : _chatListTimeText(conversation.lastMessageTime!),
       color: avatarColorFor(conversation.peerUserId),
       emoji: initial,
       avatarUrl: conversation.roomImg,
       targetUserId: conversation.peerUserId,
       roomId: conversation.roomId,
       pinned: conversation.topStatus == 1,
+      delivered: isOutgoingLastMessage && hasLastMessage,
+      deliveredRead:
+          isOutgoingLastMessage &&
+          hasLastMessage &&
+          conversation.readReceipt != 0 &&
+          conversation.lastMessageStatus == 2,
       readReceiptEnabled: conversation.readReceipt != 0,
       isOnline: conversation.isOnline,
+      nodisturbStatus: conversation.nodisturbStatus,
+      unread: conversation.unreadCount,
       messages: const [],
     );
   }
