@@ -749,6 +749,222 @@ abstract class AppLocalizations {
   /// **'Scan to sign in'**
   String get loginQrScanToSignIn;
 
+  /// No description provided for @appAccountListPanelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit & switch accounts'**
+  String get appAccountListPanelTitle;
+
+  /// No description provided for @appAccountListAddOrSwitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch & add'**
+  String get appAccountListAddOrSwitch;
+
+  /// No description provided for @appAccountListEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No real APP accounts have been signed in on this device yet.'**
+  String get appAccountListEmpty;
+
+  /// No description provided for @appAccountListLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to load APP accounts. Please try again later.'**
+  String get appAccountListLoadFailed;
+
+  /// No description provided for @appAccountListSelectAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a real APP account to view details.'**
+  String get appAccountListSelectAccount;
+
+  /// No description provided for @appAccountInfoAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get appAccountInfoAccount;
+
+  /// No description provided for @appAccountInfoNickname.
+  ///
+  /// In en, this message translates to:
+  /// **'Nickname'**
+  String get appAccountInfoNickname;
+
+  /// No description provided for @appAccountInfoBasicProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'Basic profile'**
+  String get appAccountInfoBasicProfile;
+
+  /// No description provided for @appAccountInfoEditProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit profile'**
+  String get appAccountInfoEditProfile;
+
+  /// No description provided for @appAccountInfoProfile.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get appAccountInfoProfile;
+
+  /// No description provided for @appAccountInfoHonor.
+  ///
+  /// In en, this message translates to:
+  /// **'Honor'**
+  String get appAccountInfoHonor;
+
+  /// No description provided for @appAccountInfoActivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Activity'**
+  String get appAccountInfoActivity;
+
+  /// No description provided for @appAccountInfoRelationship.
+  ///
+  /// In en, this message translates to:
+  /// **'Relationship'**
+  String get appAccountInfoRelationship;
+
+  /// No description provided for @appAccountInfoAlbum.
+  ///
+  /// In en, this message translates to:
+  /// **'Album'**
+  String get appAccountInfoAlbum;
+
+  /// No description provided for @appAccountInfoFamily.
+  ///
+  /// In en, this message translates to:
+  /// **'Family'**
+  String get appAccountInfoFamily;
+
+  /// No description provided for @appAccountInfoGoldCoin.
+  ///
+  /// In en, this message translates to:
+  /// **'Earn gold coins'**
+  String get appAccountInfoGoldCoin;
+
+  /// No description provided for @appAccountInfoPrivateAlbum.
+  ///
+  /// In en, this message translates to:
+  /// **'Private album'**
+  String get appAccountInfoPrivateAlbum;
+
+  /// No description provided for @appAccountInfoPhotoWall.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo wall'**
+  String get appAccountInfoPhotoWall;
+
+  /// No description provided for @appAccountInfoId.
+  ///
+  /// In en, this message translates to:
+  /// **'ID'**
+  String get appAccountInfoId;
+
+  /// No description provided for @appAccountInfoBirthday.
+  ///
+  /// In en, this message translates to:
+  /// **'Birthday'**
+  String get appAccountInfoBirthday;
+
+  /// No description provided for @appAccountInfoZodiac.
+  ///
+  /// In en, this message translates to:
+  /// **'Zodiac'**
+  String get appAccountInfoZodiac;
+
+  /// No description provided for @appAccountInfoRegisterTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Registration time'**
+  String get appAccountInfoRegisterTime;
+
+  /// No description provided for @appAccountInfoSignature.
+  ///
+  /// In en, this message translates to:
+  /// **'Signature'**
+  String get appAccountInfoSignature;
+
+  /// No description provided for @appAccountInfoSignaturePlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Say something...'**
+  String get appAccountInfoSignaturePlaceholder;
+
+  /// No description provided for @appAccountInfoVoiceIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice intro'**
+  String get appAccountInfoVoiceIntro;
+
+  /// No description provided for @appAccountInfoHeight.
+  ///
+  /// In en, this message translates to:
+  /// **'Height'**
+  String get appAccountInfoHeight;
+
+  /// No description provided for @appAccountInfoWeight.
+  ///
+  /// In en, this message translates to:
+  /// **'Weight'**
+  String get appAccountInfoWeight;
+
+  /// No description provided for @appAccountInfoIndustry.
+  ///
+  /// In en, this message translates to:
+  /// **'Industry'**
+  String get appAccountInfoIndustry;
+
+  /// No description provided for @appAccountInfoOccupation.
+  ///
+  /// In en, this message translates to:
+  /// **'Occupation'**
+  String get appAccountInfoOccupation;
+
+  /// No description provided for @appAccountInfoBirthplace.
+  ///
+  /// In en, this message translates to:
+  /// **'Birthplace'**
+  String get appAccountInfoBirthplace;
+
+  /// No description provided for @appAccountInfoResidence.
+  ///
+  /// In en, this message translates to:
+  /// **'Residence'**
+  String get appAccountInfoResidence;
+
+  /// No description provided for @appAccountAvatarChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change avatar'**
+  String get appAccountAvatarChange;
+
+  /// No description provided for @appAccountAvatarPickerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose profile photo'**
+  String get appAccountAvatarPickerTitle;
+
+  /// No description provided for @appAccountAvatarUploadSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile photo updated.'**
+  String get appAccountAvatarUploadSuccess;
+
+  /// No description provided for @appAccountAvatarUploadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Unable to update profile photo. Please try again.'**
+  String get appAccountAvatarUploadFailed;
+
+  /// No description provided for @appAccountInfoEmptyTab.
+  ///
+  /// In en, this message translates to:
+  /// **'No content yet'**
+  String get appAccountInfoEmptyTab;
+
   /// No description provided for @workspaceUserOnline.
   ///
   /// In en, this message translates to:

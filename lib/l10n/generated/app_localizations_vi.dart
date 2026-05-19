@@ -351,6 +351,118 @@ class AppLocalizationsVi extends AppLocalizations {
   String get loginQrScanToSignIn => 'Quét để đăng nhập';
 
   @override
+  String get appAccountListPanelTitle => 'Sửa & đổi tài khoản';
+
+  @override
+  String get appAccountListAddOrSwitch => 'Đổi & thêm';
+
+  @override
+  String get appAccountListEmpty =>
+      'Thiết bị này chưa đăng nhập tài khoản APP thật nào.';
+
+  @override
+  String get appAccountListLoadFailed =>
+      'Không thể tải tài khoản APP. Vui lòng thử lại sau.';
+
+  @override
+  String get appAccountListSelectAccount =>
+      'Chọn một tài khoản APP thật để xem chi tiết.';
+
+  @override
+  String get appAccountInfoAccount => 'Tài khoản';
+
+  @override
+  String get appAccountInfoNickname => 'Biệt danh';
+
+  @override
+  String get appAccountInfoBasicProfile => 'Hồ sơ cơ bản';
+
+  @override
+  String get appAccountInfoEditProfile => 'Sửa hồ sơ';
+
+  @override
+  String get appAccountInfoProfile => 'Hồ sơ';
+
+  @override
+  String get appAccountInfoHonor => 'Danh dự';
+
+  @override
+  String get appAccountInfoActivity => 'Hoạt động';
+
+  @override
+  String get appAccountInfoRelationship => 'Quan hệ';
+
+  @override
+  String get appAccountInfoAlbum => 'Album';
+
+  @override
+  String get appAccountInfoFamily => 'Gia đình';
+
+  @override
+  String get appAccountInfoGoldCoin => 'Nhận xu vàng';
+
+  @override
+  String get appAccountInfoPrivateAlbum => 'Album riêng tư';
+
+  @override
+  String get appAccountInfoPhotoWall => 'Tường ảnh';
+
+  @override
+  String get appAccountInfoId => 'ID';
+
+  @override
+  String get appAccountInfoBirthday => 'Sinh nhật';
+
+  @override
+  String get appAccountInfoZodiac => 'Cung hoàng đạo';
+
+  @override
+  String get appAccountInfoRegisterTime => 'Thời gian đăng ký';
+
+  @override
+  String get appAccountInfoSignature => 'Chữ ký';
+
+  @override
+  String get appAccountInfoSignaturePlaceholder => 'Nói điều gì đó...';
+
+  @override
+  String get appAccountInfoVoiceIntro => 'Giới thiệu bằng giọng nói';
+
+  @override
+  String get appAccountInfoHeight => 'Chiều cao';
+
+  @override
+  String get appAccountInfoWeight => 'Cân nặng';
+
+  @override
+  String get appAccountInfoIndustry => 'Ngành nghề';
+
+  @override
+  String get appAccountInfoOccupation => 'Nghề nghiệp';
+
+  @override
+  String get appAccountInfoBirthplace => 'Nơi sinh';
+
+  @override
+  String get appAccountInfoResidence => 'Nơi ở';
+
+  @override
+  String get appAccountAvatarChange => 'Đổi ảnh đại diện';
+
+  @override
+  String get appAccountAvatarPickerTitle => 'Chọn ảnh đại diện';
+
+  @override
+  String get appAccountAvatarUploadSuccess => 'Đã cập nhật ảnh đại diện.';
+
+  @override
+  String get appAccountAvatarUploadFailed =>
+      'Không thể cập nhật ảnh đại diện. Vui lòng thử lại.';
+
+  @override
+  String get appAccountInfoEmptyTab => 'Chưa có nội dung';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override

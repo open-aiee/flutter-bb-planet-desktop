@@ -84,6 +84,67 @@ class AppAccountAuthApi {
     );
   }
 
+  Future<void> updateAvatar({
+    required String avatarUrl,
+    required String certificate,
+    required String deviceId,
+    required String lang,
+  }) async {
+    await _updateUserInfo(
+      data: {'avatarUrl': avatarUrl.trim()},
+      certificate: certificate,
+      deviceId: deviceId,
+      lang: lang,
+    );
+  }
+
+  Future<void> updateNickName({
+    required String nickName,
+    required String certificate,
+    required String deviceId,
+    required String lang,
+  }) async {
+    await _updateUserInfo(
+      data: {'nickName': nickName.trim()},
+      certificate: certificate,
+      deviceId: deviceId,
+      lang: lang,
+    );
+  }
+
+  Future<void> _updateUserInfo({
+    required Map<String, dynamic> data,
+    required String certificate,
+    required String deviceId,
+    required String lang,
+  }) async {
+    final updatePath = '/center/userInfo/update';
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        updatePath,
+        data: data,
+        options: Options(
+          headers: {
+            'Certificate': certificate,
+            'DeviceId': deviceId,
+            'Lang': lang,
+          },
+        ),
+      );
+      final body = response.data ?? <String, dynamic>{};
+      if (body['code'] != 200) {
+        throw AppAccountLoginException(
+          message: body['message']?.toString() ?? 'Update profile failed',
+          messageKey: body['messageKey']?.toString(),
+        );
+      }
+    } on DioException catch (error) {
+      throw AppAccountLoginException(
+        message: _dioErrorMessage(error, _dio.options.baseUrl + updatePath),
+      );
+    }
+  }
+
   static String _md5Upper32(String input) {
     return md5.convert(utf8.encode(input)).toString().toUpperCase();
   }

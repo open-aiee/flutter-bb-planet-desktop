@@ -45,6 +45,22 @@ class ChatMediaUploadApi {
     );
   }
 
+  Future<String> uploadAvatarImage({
+    required String path,
+    required String certificate,
+    required String deviceId,
+    required String lang,
+  }) {
+    return _uploadTempMedia(
+      path: path,
+      endpoint: '/file/upload/image',
+      certificate: certificate,
+      deviceId: deviceId,
+      lang: lang,
+      bucketType: '2',
+    );
+  }
+
   Future<String> uploadTempVideo({
     required String path,
     required String certificate,
@@ -81,6 +97,7 @@ class ChatMediaUploadApi {
     required String certificate,
     required String deviceId,
     required String lang,
+    String bucketType = '5',
   }) async {
     final file = File(path);
     if (!await file.exists()) {
@@ -89,7 +106,7 @@ class ChatMediaUploadApi {
 
     final formData = FormData.fromMap({
       'file': await MultipartFile.fromFile(path),
-      'type': '5',
+      'type': bucketType,
     });
 
     final Response<Map<String, dynamic>> response;

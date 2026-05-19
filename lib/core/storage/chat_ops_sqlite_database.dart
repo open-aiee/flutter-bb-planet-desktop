@@ -36,13 +36,18 @@ class ChatOpsSqliteDatabase {
     return databaseFactory.openDatabase(
       databasePath,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         onConfigure: (db) async {
           await db.execute('PRAGMA foreign_keys = ON');
           await db.execute('PRAGMA journal_mode = WAL');
         },
         onCreate: (db, version) async {
           await _createSchema(db);
+        },
+        onUpgrade: (db, oldVersion, newVersion) async {
+          if (oldVersion < 2) {
+            await _createConversationStateSchema(db);
+          }
         },
       ),
     );
@@ -105,6 +110,23 @@ class ChatOpsSqliteDatabase {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_chat_peer_profiles_app '
       'ON chat_peer_profiles (app_user_id, peer_user_id)',
+    );
+    await _createConversationStateSchema(db);
+  }
+
+  static Future<void> _createConversationStateSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS chat_conversation_state (
+        app_user_id INTEGER NOT NULL,
+        peer_user_id INTEGER NOT NULL,
+        unread_count INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (app_user_id, peer_user_id)
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_chat_conversation_state_app '
+      'ON chat_conversation_state (app_user_id, peer_user_id)',
     );
   }
 }

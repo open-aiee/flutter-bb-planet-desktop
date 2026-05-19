@@ -16,6 +16,7 @@ class LocalChatMessageStore {
   const LocalChatMessageStore(this._database);
 
   static const _table = 'chat_messages';
+  static const _stateTable = 'chat_conversation_state';
 
   final Database _database;
 
@@ -63,6 +64,61 @@ class LocalChatMessageStore {
       latestByPeer.putIfAbsent(message.peerUserId, () => message);
     }
     return latestByPeer;
+  }
+
+  Future<Map<int, int>> loadUnreadByAppUser({required int appUserId}) async {
+    final rows = await _database.query(
+      _stateTable,
+      where: 'app_user_id = ? AND peer_user_id > 0',
+      whereArgs: [appUserId],
+    );
+    return {
+      for (final row in rows)
+        _asInt(row['peer_user_id']): _asInt(row['unread_count']),
+    }..removeWhere((peerUserId, _) => peerUserId <= 0);
+  }
+
+  Future<int> incrementUnread({
+    required int appUserId,
+    required int peerUserId,
+  }) async {
+    if (appUserId <= 0 || peerUserId <= 0) {
+      return 0;
+    }
+    final rows = await _database.query(
+      _stateTable,
+      columns: const ['unread_count'],
+      where: 'app_user_id = ? AND peer_user_id = ?',
+      whereArgs: [appUserId, peerUserId],
+      limit: 1,
+    );
+    final next = (rows.isEmpty ? 0 : _asInt(rows.first['unread_count'])) + 1;
+    await setUnreadCount(
+      appUserId: appUserId,
+      peerUserId: peerUserId,
+      unreadCount: next,
+    );
+    return next;
+  }
+
+  Future<void> setUnreadCount({
+    required int appUserId,
+    required int peerUserId,
+    required int unreadCount,
+  }) async {
+    if (appUserId <= 0 || peerUserId <= 0) {
+      return;
+    }
+    await _database.insert(_stateTable, {
+      'app_user_id': appUserId,
+      'peer_user_id': peerUserId,
+      'unread_count': unreadCount < 0 ? 0 : unreadCount,
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    debugPrint(
+      '[CHAT_OPS][LOCAL][UNREAD_STORE] sender=$appUserId '
+      'peer=$peerUserId unread=$unreadCount',
+    );
   }
 
   Future<List<LocalChatMessage>> markOutgoingReadByRoom({

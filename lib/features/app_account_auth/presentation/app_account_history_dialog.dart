@@ -7,7 +7,9 @@ import '../domain/app_account_history_entry.dart';
 import 'app_account_panel.dart';
 
 class AppAccountHistoryDialog extends ConsumerStatefulWidget {
-  const AppAccountHistoryDialog({super.key});
+  const AppAccountHistoryDialog({super.key, this.showCloseButton = false});
+
+  final bool showCloseButton;
 
   @override
   ConsumerState<AppAccountHistoryDialog> createState() =>
@@ -91,6 +93,8 @@ class _AppAccountHistoryDialogState
             _DialogHeader(
               title: l10n.appAccountHistoryTitle,
               subtitle: l10n.appAccountHistorySubtitle,
+              showCloseButton: widget.showCloseButton,
+              onClose: () => Navigator.of(context).pop(),
             ),
             Expanded(
               child: FutureBuilder<List<AppAccountHistoryEntry>>(
@@ -202,10 +206,17 @@ class _AppAccountHistoryDialogState
 }
 
 class _DialogHeader extends StatelessWidget {
-  const _DialogHeader({required this.title, required this.subtitle});
+  const _DialogHeader({
+    required this.title,
+    required this.subtitle,
+    required this.showCloseButton,
+    required this.onClose,
+  });
 
   final String title;
   final String subtitle;
+  final bool showCloseButton;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -262,6 +273,16 @@ class _DialogHeader extends StatelessWidget {
               ],
             ),
           ),
+          if (showCloseButton) ...[
+            const SizedBox(width: 10),
+            IconButton(
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+              onPressed: onClose,
+              icon: const Icon(Icons.close_rounded),
+              color: const Color(0xff667781),
+              splashRadius: 20,
+            ),
+          ],
         ],
       ),
     );

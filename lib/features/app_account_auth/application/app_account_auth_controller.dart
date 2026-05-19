@@ -23,6 +23,7 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
   static const _idKey = 'appAccount.id';
   static const _emailKey = 'appAccount.email';
   static const _displayNameKey = 'appAccount.displayName';
+  static const _avatarUrlKey = 'appAccount.avatarUrl';
   static const _savedLoginEmailKey = 'appAccount.savedLogin.email';
   static const _savedLoginPasswordKey = 'appAccount.savedLogin.password';
   static const _legacyHistoryKey = 'appAccount.history';
@@ -78,6 +79,7 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
     await store.delete(_idKey);
     await store.delete(_emailKey);
     await store.delete(_displayNameKey);
+    await store.delete(_avatarUrlKey);
     state = const AppAccountAuthState();
   }
 
@@ -87,6 +89,71 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
     await store.write(_idKey, session.id.toString());
     await store.write(_emailKey, session.email);
     await store.write(_displayNameKey, session.displayName);
+    await store.write(_avatarUrlKey, session.avatarUrl ?? '');
+  }
+
+  Future<void> updateCurrentAvatar(String avatarUrl) async {
+    final session = state.session;
+    if (session == null || avatarUrl.trim().isEmpty) {
+      return;
+    }
+    final updated = session.copyWith(avatarUrl: avatarUrl.trim());
+    await _persistSession(updated);
+    final history = await readLoginHistory();
+    final matched = history.firstWhere(
+      (entry) =>
+          (entry.id > 0 && entry.id == updated.id) ||
+          (entry.email.trim().toLowerCase() ==
+              updated.email.trim().toLowerCase()),
+      orElse: () => AppAccountHistoryEntry(
+        id: updated.id,
+        email: updated.email,
+        displayName: updated.displayName,
+        avatarUrl: updated.avatarUrl ?? '',
+        password: '',
+        token: updated.certificate,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    final store = await ref.read(appAccountHistoryStoreProvider.future);
+    await store.upsert(
+      matched.copyWith(
+        displayName: updated.displayName,
+        avatarUrl: updated.avatarUrl ?? '',
+        token: updated.certificate,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    state = state.copyWith(session: updated);
+  }
+
+  Future<void> updateHistoryAvatar({
+    required AppAccountHistoryEntry account,
+    required String avatarUrl,
+  }) async {
+    final trimmedAvatar = avatarUrl.trim();
+    if (trimmedAvatar.isEmpty) {
+      return;
+    }
+    final store = await ref.read(appAccountHistoryStoreProvider.future);
+    final updatedEntry = account.copyWith(
+      avatarUrl: trimmedAvatar,
+      updatedAt: DateTime.now(),
+    );
+    await store.upsert(updatedEntry);
+
+    final session = state.session;
+    final isCurrent =
+        session != null &&
+        ((account.id > 0 && account.id == session.id) ||
+            (account.email.trim().isNotEmpty &&
+                account.email.trim().toLowerCase() ==
+                    session.email.trim().toLowerCase()));
+    if (isCurrent) {
+      final updatedSession = session.copyWith(avatarUrl: trimmedAvatar);
+      await _persistSession(updatedSession);
+      state = state.copyWith(session: updatedSession);
+    }
   }
 
   Future<void> _persistSavedLoginCredentials({
@@ -190,6 +257,7 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
     final id = int.tryParse(await store.read(_idKey) ?? '') ?? 0;
     final email = await store.read(_emailKey);
     final displayName = await store.read(_displayNameKey);
+    final avatarUrl = await store.read(_avatarUrlKey);
     final savedEmail = await store.read(_savedLoginEmailKey);
     final savedPassword = await store.read(_savedLoginPasswordKey);
     if ((id > 0 || (email ?? savedEmail ?? '').trim().isNotEmpty) &&
@@ -199,7 +267,7 @@ class AppAccountAuthController extends Notifier<AppAccountAuthState> {
           id: id,
           email: (savedEmail ?? email ?? '').trim(),
           displayName: (displayName ?? email ?? savedEmail ?? '').trim(),
-          avatarUrl: '',
+          avatarUrl: avatarUrl ?? '',
           password: savedPassword ?? '',
           token: certificate ?? '',
           updatedAt: DateTime.now(),

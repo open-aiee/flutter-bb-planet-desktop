@@ -353,6 +353,118 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loginQrScanToSignIn => 'Scan to sign in';
 
   @override
+  String get appAccountListPanelTitle => 'Edit & switch accounts';
+
+  @override
+  String get appAccountListAddOrSwitch => 'Switch & add';
+
+  @override
+  String get appAccountListEmpty =>
+      'No real APP accounts have been signed in on this device yet.';
+
+  @override
+  String get appAccountListLoadFailed =>
+      'Unable to load APP accounts. Please try again later.';
+
+  @override
+  String get appAccountListSelectAccount =>
+      'Select a real APP account to view details.';
+
+  @override
+  String get appAccountInfoAccount => 'Account';
+
+  @override
+  String get appAccountInfoNickname => 'Nickname';
+
+  @override
+  String get appAccountInfoBasicProfile => 'Basic profile';
+
+  @override
+  String get appAccountInfoEditProfile => 'Edit profile';
+
+  @override
+  String get appAccountInfoProfile => 'Profile';
+
+  @override
+  String get appAccountInfoHonor => 'Honor';
+
+  @override
+  String get appAccountInfoActivity => 'Activity';
+
+  @override
+  String get appAccountInfoRelationship => 'Relationship';
+
+  @override
+  String get appAccountInfoAlbum => 'Album';
+
+  @override
+  String get appAccountInfoFamily => 'Family';
+
+  @override
+  String get appAccountInfoGoldCoin => 'Earn gold coins';
+
+  @override
+  String get appAccountInfoPrivateAlbum => 'Private album';
+
+  @override
+  String get appAccountInfoPhotoWall => 'Photo wall';
+
+  @override
+  String get appAccountInfoId => 'ID';
+
+  @override
+  String get appAccountInfoBirthday => 'Birthday';
+
+  @override
+  String get appAccountInfoZodiac => 'Zodiac';
+
+  @override
+  String get appAccountInfoRegisterTime => 'Registration time';
+
+  @override
+  String get appAccountInfoSignature => 'Signature';
+
+  @override
+  String get appAccountInfoSignaturePlaceholder => 'Say something...';
+
+  @override
+  String get appAccountInfoVoiceIntro => 'Voice intro';
+
+  @override
+  String get appAccountInfoHeight => 'Height';
+
+  @override
+  String get appAccountInfoWeight => 'Weight';
+
+  @override
+  String get appAccountInfoIndustry => 'Industry';
+
+  @override
+  String get appAccountInfoOccupation => 'Occupation';
+
+  @override
+  String get appAccountInfoBirthplace => 'Birthplace';
+
+  @override
+  String get appAccountInfoResidence => 'Residence';
+
+  @override
+  String get appAccountAvatarChange => 'Change avatar';
+
+  @override
+  String get appAccountAvatarPickerTitle => 'Choose profile photo';
+
+  @override
+  String get appAccountAvatarUploadSuccess => 'Profile photo updated.';
+
+  @override
+  String get appAccountAvatarUploadFailed =>
+      'Unable to update profile photo. Please try again.';
+
+  @override
+  String get appAccountInfoEmptyTab => 'No content yet';
+
+  @override
   String get workspaceUserOnline => 'Online';
 
   @override

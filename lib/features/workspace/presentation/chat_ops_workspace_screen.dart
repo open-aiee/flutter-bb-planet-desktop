@@ -23,6 +23,7 @@ import '../../../core/websocket/im_socket_client.dart'
     show ImClientIndexEvent, ImSyncRecordAck;
 import '../../../l10n/generated/app_localizations.dart';
 import '../../app_account_auth/application/app_account_auth_controller.dart';
+import '../../app_account_auth/domain/app_account_history_entry.dart';
 import '../../app_account_auth/domain/app_user_session.dart';
 import '../../app_account_auth/presentation/app_account_history_dialog.dart';
 import '../../messages/data/chat_conversation_api.dart';
@@ -80,6 +81,51 @@ String _chatListTimeText(DateTime time) {
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$hour:$minute';
+}
+
+String? _downloadsDirectoryPath() {
+  final home = Platform.environment['HOME']?.trim();
+  if (home != null && home.isNotEmpty) {
+    final downloads = Directory('$home/Downloads');
+    if (downloads.existsSync()) {
+      return downloads.path;
+    }
+    return home;
+  }
+  final userProfile = Platform.environment['USERPROFILE']?.trim();
+  if (userProfile != null && userProfile.isNotEmpty) {
+    final downloads = Directory('$userProfile\\Downloads');
+    if (downloads.existsSync()) {
+      return downloads.path;
+    }
+    return userProfile;
+  }
+  return null;
+}
+
+String _fileExtension(String path) {
+  final filename = path.split(Platform.pathSeparator).last;
+  final dotIndex = filename.lastIndexOf('.');
+  if (dotIndex < 0 || dotIndex == filename.length - 1) {
+    return '';
+  }
+  return filename.substring(dotIndex + 1).toLowerCase();
+}
+
+String _accountDisplayName(AppAccountHistoryEntry account) {
+  final displayName = account.displayName.trim();
+  if (displayName.isNotEmpty) {
+    return displayName;
+  }
+  final email = account.email.trim();
+  if (email.isNotEmpty) {
+    return email;
+  }
+  return account.id > 0 ? 'Beepian${account.id}' : 'BB Planet';
+}
+
+String _accountInitial(String label) {
+  return label.characters.isEmpty ? 'B' : label.characters.first.toUpperCase();
 }
 
 class _SelectedChatMedia {
@@ -193,6 +239,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   int? _selectedConversationPeerUserId;
   _Conversation? _activeConversation;
   bool _isConversationLoading = false;
+  bool _isAppAccountListMode = false;
+  bool _isAppAccountListLoading = false;
+  bool _isAppAccountAvatarUpdating = false;
   bool _isSearchLoading = false;
   bool _didShowAccountHistory = false;
   int _loadRequestId = 0;
@@ -207,9 +256,12 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   String _searchQuery = '';
   String? _searchNotice;
   String? _chatNotice;
+  String? _appAccountListNotice;
   final Map<String, String> _drafts = {};
   List<_Conversation> _chatConversations = const [];
   List<_Conversation> _searchConversations = const [];
+  List<AppAccountHistoryEntry> _appAccountEntries = const [];
+  int? _selectedAppAccountInfoId;
   final Map<_RailTab, List<_Conversation>> _remoteConversations = {};
   final Map<_RailTab, String> _remoteNotices = {};
   final Map<int, int> _directRoomIds = {};
@@ -252,10 +304,14 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.appAccountSession?.certificate !=
         widget.appAccountSession?.certificate) {
+      final wasAppAccountListMode = _isAppAccountListMode;
       _resetAccountScopedState();
       _syncImSocketSession();
       unawaited(_loadRecentConversationPreviews());
       unawaited(_loadChatConversations());
+      if (wasAppAccountListMode) {
+        unawaited(_openAppAccountListMode());
+      }
       if (_selectedTab != _RailTab.chats) {
         unawaited(_loadRemoteUsersForTab(_selectedTab));
       }
@@ -276,14 +332,19 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final isSearching = _searchQuery.trim().isNotEmpty;
-    final conversations = _withRecentMessagePreviews(
-      isSearching
-          ? _searchConversations
-          : _conversationsForTab(l10n, _selectedTab),
-    );
+    final conversations = _isAppAccountListMode
+        ? const <_Conversation>[]
+        : _withRecentMessagePreviews(
+            isSearching
+                ? _searchConversations
+                : _conversationsForTab(l10n, _selectedTab),
+          );
     final chatBadge = _chatBadgeText();
     final selectedConversationIndex = _selectedIndexIn(conversations);
     final selectedConversation = _selectedConversationFrom(conversations);
+    final selectedAppAccount = _isAppAccountListMode
+        ? _selectedAppAccountEntry()
+        : null;
     final storageKey = selectedConversation == null
         ? null
         : _storageKeyFor(selectedConversation);
@@ -316,11 +377,18 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
                 ? -1
                 : selectedConversationIndex,
             conversations: conversations,
-            isConversationLoading: isSearching
+            isConversationLoading: _isAppAccountListMode
+                ? _isAppAccountListLoading
+                : isSearching
                 ? _isSearchLoading
                 : _isConversationLoading,
-            emptyMessage: _emptyMessageFor(l10n, isSearching: isSearching),
+            emptyMessage: _isAppAccountListMode
+                ? (_appAccountListNotice ?? l10n.appAccountListEmpty)
+                : _emptyMessageFor(l10n, isSearching: isSearching),
             searchQuery: _searchQuery,
+            appAccountListMode: _isAppAccountListMode,
+            appAccounts: _appAccountEntries,
+            selectedAppAccountIndex: _selectedAppAccountIndex(),
             onTabSelected: _selectTab,
             onConversationSelected: (index) {
               final safeIndex = index.clamp(0, conversations.length - 1);
@@ -336,61 +404,73 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
               });
               _activateConversation(conversation);
             },
+            onAppAccountSelected: _selectAppAccountInfo,
             onSearchChanged: _onSearchChanged,
-            onAppAccountTap: widget.onAppAccountTap,
+            onAppAccountTap: _openAppAccountListMode,
+            onAppAccountDialogTap: _openAppAccountDialog,
             onSettingsTap: widget.onSettingsTap,
             chatBadge: chatBadge,
             l10n: l10n,
           ),
           Expanded(
-            child: _ChatSection(
-              conversation: selectedConversation,
-              appAccountSession: widget.appAccountSession,
-              connectionStatus: _connectionStatus,
-              messages: messages,
-              draft: draftKey == null ? '' : _drafts[draftKey] ?? '',
-              l10n: l10n,
-              emptyMessage: widget.appAccountSession == null
-                  ? l10n.workspaceUsersLoginRequired
-                  : l10n.selectConversationFirst,
-              onDraftChanged: (value) {
-                if (draftKey != null) {
-                  _drafts[draftKey] = value;
-                }
-              },
-              onSend: selectedConversation == null
-                  ? null
-                  : (text) {
-                      final activeConversation =
-                          _selectedConversation() ?? selectedConversation;
-                      debugPrint(
-                        '[CHAT_OPS][UI][ON_SEND] '
-                        'displayPeer=${selectedConversation.targetUserId} '
-                        'activePeer=${activeConversation.targetUserId} '
-                        'activeRoom=${activeConversation.roomId} '
-                        'textLength=${text.trim().length}',
-                      );
-                      _sendLocalMessage(activeConversation, text);
+            child: _isAppAccountListMode
+                ? _AppAccountInfoSection(
+                    account: selectedAppAccount,
+                    l10n: l10n,
+                    isCurrent:
+                        selectedAppAccount != null &&
+                        widget.appAccountSession?.id == selectedAppAccount.id,
+                    isAvatarUpdating: _isAppAccountAvatarUpdating,
+                    onAvatarTap: _pickAndUploadAppAccountAvatar,
+                  )
+                : _ChatSection(
+                    conversation: selectedConversation,
+                    appAccountSession: widget.appAccountSession,
+                    connectionStatus: _connectionStatus,
+                    messages: messages,
+                    draft: draftKey == null ? '' : _drafts[draftKey] ?? '',
+                    l10n: l10n,
+                    emptyMessage: widget.appAccountSession == null
+                        ? l10n.workspaceUsersLoginRequired
+                        : l10n.selectConversationFirst,
+                    onDraftChanged: (value) {
+                      if (draftKey != null) {
+                        _drafts[draftKey] = value;
+                      }
                     },
-              onSendEmojiGame: selectedConversation == null
-                  ? null
-                  : (game) => _sendEmojiGameMessage(
-                      _selectedConversation() ?? selectedConversation,
-                      game,
-                    ),
-              onSendMedia: selectedConversation == null
-                  ? null
-                  : (media) => _sendMediaMessage(
-                      _selectedConversation() ?? selectedConversation,
-                      media,
-                    ),
-              onSendVoice: selectedConversation == null
-                  ? null
-                  : (voice) => _sendVoiceMessage(
-                      _selectedConversation() ?? selectedConversation,
-                      voice,
-                    ),
-            ),
+                    onSend: selectedConversation == null
+                        ? null
+                        : (text) {
+                            final activeConversation =
+                                _selectedConversation() ?? selectedConversation;
+                            debugPrint(
+                              '[CHAT_OPS][UI][ON_SEND] '
+                              'displayPeer=${selectedConversation.targetUserId} '
+                              'activePeer=${activeConversation.targetUserId} '
+                              'activeRoom=${activeConversation.roomId} '
+                              'textLength=${text.trim().length}',
+                            );
+                            _sendLocalMessage(activeConversation, text);
+                          },
+                    onSendEmojiGame: selectedConversation == null
+                        ? null
+                        : (game) => _sendEmojiGameMessage(
+                            _selectedConversation() ?? selectedConversation,
+                            game,
+                          ),
+                    onSendMedia: selectedConversation == null
+                        ? null
+                        : (media) => _sendMediaMessage(
+                            _selectedConversation() ?? selectedConversation,
+                            media,
+                          ),
+                    onSendVoice: selectedConversation == null
+                        ? null
+                        : (voice) => _sendVoiceMessage(
+                            _selectedConversation() ?? selectedConversation,
+                            voice,
+                          ),
+                  ),
           ),
         ],
       ),
@@ -398,7 +478,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
   }
 
   Future<void> _selectTab(_RailTab tab) async {
-    if (tab == _selectedTab &&
+    if (!_isAppAccountListMode &&
+        tab == _selectedTab &&
         !_isConversationLoading &&
         (tab == _RailTab.chats
             ? _chatConversations.isNotEmpty
@@ -407,6 +488,8 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     }
 
     setState(() {
+      _isAppAccountListMode = false;
+      _selectedAppAccountInfoId = null;
       _selectedTab = tab;
       _selectedConversationPeerUserId = null;
       _activeConversation = null;
@@ -418,6 +501,216 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     }
 
     await _loadRemoteUsersForTab(tab);
+  }
+
+  Future<void> _openAppAccountListMode() async {
+    setState(() {
+      _isAppAccountListMode = true;
+      _selectedConversationPeerUserId = null;
+      _activeConversation = null;
+      _searchQuery = '';
+    });
+    await _loadAppAccountList();
+  }
+
+  Future<void> _openAppAccountDialog() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AppAccountHistoryDialog(showCloseButton: true),
+    );
+    if (!mounted || !_isAppAccountListMode) {
+      return;
+    }
+    await _loadAppAccountList();
+  }
+
+  Future<void> _loadAppAccountList() async {
+    final requestId = ++_loadRequestId;
+    final l10n = AppLocalizations.of(context);
+    setState(() {
+      _isAppAccountListLoading = true;
+      _appAccountListNotice = null;
+    });
+    try {
+      final rawAccounts = await ref
+          .read(appAccountAuthControllerProvider.notifier)
+          .readLoginHistory();
+      final accounts = _mergeCurrentAppAccount(rawAccounts);
+      if (!mounted || requestId != _loadRequestId || !_isAppAccountListMode) {
+        return;
+      }
+      final currentId = widget.appAccountSession?.id;
+      setState(() {
+        _appAccountEntries = accounts;
+        _selectedAppAccountInfoId =
+            _selectedAppAccountInfoId ??
+            (currentId != null && accounts.any((item) => item.id == currentId)
+                ? currentId
+                : accounts.firstOrNull?.id);
+        _appAccountListNotice = accounts.isEmpty
+            ? l10n.appAccountListEmpty
+            : null;
+        _isAppAccountListLoading = false;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _loadRequestId) {
+        return;
+      }
+      setState(() {
+        _appAccountEntries = const [];
+        _selectedAppAccountInfoId = null;
+        _appAccountListNotice = l10n.appAccountListLoadFailed;
+        _isAppAccountListLoading = false;
+      });
+    }
+  }
+
+  List<AppAccountHistoryEntry> _mergeCurrentAppAccount(
+    List<AppAccountHistoryEntry> accounts,
+  ) {
+    final session = widget.appAccountSession;
+    if (session == null) {
+      return accounts;
+    }
+    final exists = accounts.any(
+      (account) =>
+          (session.id > 0 && account.id == session.id) ||
+          (session.email.trim().isNotEmpty &&
+              account.email.trim().toLowerCase() ==
+                  session.email.trim().toLowerCase()),
+    );
+    if (exists) {
+      return accounts
+          .map(
+            (account) =>
+                (session.id > 0 && account.id == session.id) ||
+                    (session.email.trim().isNotEmpty &&
+                        account.email.trim().toLowerCase() ==
+                            session.email.trim().toLowerCase())
+                ? account.copyWith(
+                    displayName: session.displayName,
+                    avatarUrl: session.avatarUrl ?? account.avatarUrl,
+                    token: session.certificate,
+                    updatedAt: DateTime.now(),
+                  )
+                : account,
+          )
+          .toList();
+    }
+    return [
+      AppAccountHistoryEntry(
+        id: session.id,
+        email: session.email,
+        displayName: session.displayName,
+        avatarUrl: session.avatarUrl ?? '',
+        password: '',
+        token: session.certificate,
+        updatedAt: DateTime.now(),
+      ),
+      ...accounts,
+    ];
+  }
+
+  void _selectAppAccountInfo(int index) {
+    if (index < 0 || index >= _appAccountEntries.length) {
+      return;
+    }
+    setState(() {
+      _selectedAppAccountInfoId = _appAccountEntries[index].id;
+    });
+  }
+
+  Future<void> _pickAndUploadAppAccountAvatar(
+    AppAccountHistoryEntry account,
+  ) async {
+    if (_isAppAccountAvatarUpdating) {
+      return;
+    }
+    final l10n = AppLocalizations.of(context);
+    final certificate = account.token.trim().isNotEmpty
+        ? account.token.trim()
+        : widget.appAccountSession?.certificate.trim() ?? '';
+    if (certificate.isEmpty) {
+      _showWorkspaceNotice(l10n.workspaceUsersLoginRequired);
+      return;
+    }
+    final requestLang = _requestLangOf(context);
+
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: l10n.appAccountAvatarPickerTitle,
+      initialDirectory: _downloadsDirectoryPath(),
+      type: FileType.custom,
+      allowedExtensions: _chatImageExtensions,
+      allowMultiple: false,
+      withData: false,
+      withReadStream: false,
+      lockParentWindow: true,
+    );
+    final pickedFile = result == null || result.files.isEmpty
+        ? null
+        : result.files.first;
+    final path = pickedFile?.path;
+    if (path == null || path.trim().isEmpty) {
+      return;
+    }
+    if (!_chatImageExtensions.contains(_fileExtension(path))) {
+      _showWorkspaceNotice(l10n.mediaUnsupportedFile);
+      return;
+    }
+
+    setState(() => _isAppAccountAvatarUpdating = true);
+    try {
+      final sessionDeviceId = widget.appAccountSession?.deviceId.trim() ?? '';
+      final deviceId = sessionDeviceId.isNotEmpty
+          ? sessionDeviceId
+          : await DesktopDeviceId(
+              secureStore: ref.read(secureStoreProvider),
+            ).getOrCreate();
+      final avatarUrl = await ref
+          .read(chatMediaUploadApiProvider)
+          .uploadAvatarImage(
+            path: path,
+            certificate: certificate,
+            deviceId: deviceId,
+            lang: requestLang,
+          );
+      await ref
+          .read(appAccountAuthApiProvider)
+          .updateAvatar(
+            avatarUrl: avatarUrl,
+            certificate: certificate,
+            deviceId: deviceId,
+            lang: requestLang,
+          );
+      await ref
+          .read(appAccountAuthControllerProvider.notifier)
+          .updateHistoryAvatar(account: account, avatarUrl: avatarUrl);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _appAccountEntries = _appAccountEntries
+            .map(
+              (entry) => entry.id == account.id
+                  ? entry.copyWith(
+                      avatarUrl: avatarUrl,
+                      updatedAt: DateTime.now(),
+                    )
+                  : entry,
+            )
+            .toList();
+      });
+      _showWorkspaceNotice(l10n.appAccountAvatarUploadSuccess);
+    } catch (_) {
+      if (mounted) {
+        _showWorkspaceNotice(l10n.appAccountAvatarUploadFailed);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isAppAccountAvatarUpdating = false);
+      }
+    }
   }
 
   Future<void> _loadRemoteUsersForTab(_RailTab tab) async {
@@ -834,6 +1127,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       setState(() {
         _localUnreadByPeer[peerUserId] = 0;
       });
+      unawaited(_persistUnreadCount(peerUserId, 0));
     }
     unawaited(_loadStoredMessages(conversation));
     if (peerUserId == null || peerUserId <= 0) {
@@ -905,6 +1199,22 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       }
     }
     return -1;
+  }
+
+  int _selectedAppAccountIndex() {
+    final selectedId = _selectedAppAccountInfoId;
+    if (selectedId == null || selectedId <= 0) {
+      return -1;
+    }
+    return _appAccountEntries.indexWhere((account) => account.id == selectedId);
+  }
+
+  AppAccountHistoryEntry? _selectedAppAccountEntry() {
+    final index = _selectedAppAccountIndex();
+    if (index < 0 || index >= _appAccountEntries.length) {
+      return null;
+    }
+    return _appAccountEntries[index];
   }
 
   int? _roomIdFor(_Conversation conversation) {
@@ -2059,6 +2369,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _rememberRecentMessageInMemory(localMessage);
       if (isOutgoing || activeConversation?.targetUserId == peerUserId) {
         _localUnreadByPeer[peerUserId] = 0;
+        unawaited(_persistUnreadCount(peerUserId, 0));
       } else {
         final base =
             _localUnreadByPeer[peerUserId] ??
@@ -2069,7 +2380,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
                 .map((conversation) => conversation.unread)
                 .firstOrNull ??
             0;
-        _localUnreadByPeer[peerUserId] = base + 1;
+        final unread = base + 1;
+        _localUnreadByPeer[peerUserId] = unread;
+        unawaited(_persistUnreadCount(peerUserId, unread));
       }
     });
     if (!isOutgoing) {
@@ -2169,6 +2482,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       if (mounted) {
         setState(() {
           _recentMessagesByPeer.clear();
+          _localUnreadByPeer.clear();
           _peerProfiles.clear();
         });
       }
@@ -2179,6 +2493,7 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       localChatPeerProfileStoreProvider.future,
     );
     final latest = await store.loadLatestByAppUser(appUserId: session.id);
+    final unread = await store.loadUnreadByAppUser(appUserId: session.id);
     final profiles = await profileStore.loadByAppUser(appUserId: session.id);
     if (!mounted || widget.appAccountSession?.id != session.id) {
       return;
@@ -2187,6 +2502,9 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _recentMessagesByPeer
         ..clear()
         ..addAll(latest);
+      _localUnreadByPeer
+        ..clear()
+        ..addAll(unread);
       _peerProfiles
         ..clear()
         ..addAll(profiles);
@@ -2195,6 +2513,19 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     if (selected != null && selected.targetUserId != null) {
       _activateConversation(selected);
     }
+  }
+
+  Future<void> _persistUnreadCount(int peerUserId, int unreadCount) async {
+    final session = widget.appAccountSession;
+    if (session == null || peerUserId <= 0) {
+      return;
+    }
+    final store = await ref.read(localChatMessageStoreProvider.future);
+    await store.setUnreadCount(
+      appUserId: session.id,
+      peerUserId: peerUserId,
+      unreadCount: unreadCount,
+    );
   }
 
   Future<void> _loadChatConversations() async {
@@ -2418,15 +2749,21 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
     _activeConversationSyncTimer?.cancel();
     setState(() {
       _selectedConversationPeerUserId = null;
+      _selectedAppAccountInfoId = null;
       _activeConversation = null;
       _isConversationLoading = false;
+      _isAppAccountListMode = false;
+      _isAppAccountListLoading = false;
+      _isAppAccountAvatarUpdating = false;
       _isSearchLoading = false;
       _isActiveConversationSyncing = false;
       _searchQuery = '';
       _searchNotice = null;
       _chatNotice = null;
+      _appAccountListNotice = null;
       _chatConversations = const [];
       _searchConversations = const [];
+      _appAccountEntries = const [];
       _remoteConversations.clear();
       _remoteNotices.clear();
       _directRoomIds.clear();
@@ -2435,6 +2772,21 @@ class _HomeScreenMainWindowState extends ConsumerState<_HomeScreenMainWindow> {
       _localUnreadByPeer.clear();
       _peerProfiles.clear();
     });
+  }
+
+  void _showWorkspaceNotice(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   void _showAccountHistoryOnOpen() {
@@ -2463,10 +2815,15 @@ class _LeftSection extends StatelessWidget {
     required this.isConversationLoading,
     required this.emptyMessage,
     required this.searchQuery,
+    required this.appAccountListMode,
+    required this.appAccounts,
+    required this.selectedAppAccountIndex,
     required this.onTabSelected,
     required this.onConversationSelected,
+    required this.onAppAccountSelected,
     required this.onSearchChanged,
     required this.onAppAccountTap,
+    required this.onAppAccountDialogTap,
     required this.onSettingsTap,
     required this.chatBadge,
     required this.l10n,
@@ -2483,10 +2840,15 @@ class _LeftSection extends StatelessWidget {
   final bool isConversationLoading;
   final String emptyMessage;
   final String searchQuery;
+  final bool appAccountListMode;
+  final List<AppAccountHistoryEntry> appAccounts;
+  final int selectedAppAccountIndex;
   final ValueChanged<_RailTab> onTabSelected;
   final ValueChanged<int> onConversationSelected;
+  final ValueChanged<int> onAppAccountSelected;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onAppAccountTap;
+  final VoidCallback onAppAccountDialogTap;
   final VoidCallback onSettingsTap;
   final String? chatBadge;
   final AppLocalizations l10n;
@@ -2504,24 +2866,36 @@ class _LeftSection extends StatelessWidget {
             appAccountBusy: appAccountBusy,
             appAccountAvatarUrl: appAccountAvatarUrl,
             selectedTab: selectedTab,
+            appAccountListMode: appAccountListMode,
             onTabSelected: onTabSelected,
             onAppAccountTap: onAppAccountTap,
+            onAppAccountDialogTap: onAppAccountDialogTap,
             onSettingsTap: onSettingsTap,
             chatBadge: chatBadge,
             l10n: l10n,
           ),
           Expanded(
-            child: _ConversationPane(
-              conversations: conversations,
-              selectedIndex: selectedConversationIndex,
-              isLoading: isConversationLoading,
-              emptyMessage: emptyMessage,
-              searchQuery: searchQuery,
-              l10n: l10n,
-              title: _titleForTab(l10n, selectedTab),
-              onSearchChanged: onSearchChanged,
-              onSelected: onConversationSelected,
-            ),
+            child: appAccountListMode
+                ? _AppAccountListPane(
+                    accounts: appAccounts,
+                    selectedIndex: selectedAppAccountIndex,
+                    isLoading: isConversationLoading,
+                    emptyMessage: emptyMessage,
+                    l10n: l10n,
+                    onAddOrSwitch: onAppAccountDialogTap,
+                    onSelected: onAppAccountSelected,
+                  )
+                : _ConversationPane(
+                    conversations: conversations,
+                    selectedIndex: selectedConversationIndex,
+                    isLoading: isConversationLoading,
+                    emptyMessage: emptyMessage,
+                    searchQuery: searchQuery,
+                    l10n: l10n,
+                    title: _titleForTab(l10n, selectedTab),
+                    onSearchChanged: onSearchChanged,
+                    onSelected: onConversationSelected,
+                  ),
           ),
         ],
       ),
@@ -2537,8 +2911,10 @@ class _NavigationRail extends StatelessWidget {
     required this.appAccountBusy,
     required this.appAccountAvatarUrl,
     required this.selectedTab,
+    required this.appAccountListMode,
     required this.onTabSelected,
     required this.onAppAccountTap,
+    required this.onAppAccountDialogTap,
     required this.onSettingsTap,
     required this.chatBadge,
     required this.l10n,
@@ -2550,8 +2926,10 @@ class _NavigationRail extends StatelessWidget {
   final bool appAccountBusy;
   final String? appAccountAvatarUrl;
   final _RailTab selectedTab;
+  final bool appAccountListMode;
   final ValueChanged<_RailTab> onTabSelected;
   final VoidCallback onAppAccountTap;
+  final VoidCallback onAppAccountDialogTap;
   final VoidCallback onSettingsTap;
   final String? chatBadge;
   final AppLocalizations l10n;
@@ -2573,35 +2951,38 @@ class _NavigationRail extends StatelessWidget {
                   icon: Icons.chat_bubble_rounded,
                   label: l10n.navChats,
                   badge: chatBadge,
-                  active: selectedTab == _RailTab.chats,
+                  active: !appAccountListMode && selectedTab == _RailTab.chats,
                   onTap: () => onTabSelected(_RailTab.chats),
                 ),
                 const SizedBox(height: 12),
                 _RailItem(
                   icon: Icons.person_add_alt_1_rounded,
                   label: l10n.navNew,
-                  active: selectedTab == _RailTab.updates,
+                  active:
+                      !appAccountListMode && selectedTab == _RailTab.updates,
                   onTap: () => onTabSelected(_RailTab.updates),
                 ),
                 const SizedBox(height: 12),
                 _RailItem(
                   icon: Icons.radio_button_checked_rounded,
                   label: l10n.navOnline,
-                  active: selectedTab == _RailTab.communities,
+                  active:
+                      !appAccountListMode &&
+                      selectedTab == _RailTab.communities,
                   onTap: () => onTabSelected(_RailTab.communities),
                 ),
                 const SizedBox(height: 12),
                 _RailItem(
                   icon: Icons.diamond_rounded,
                   label: l10n.navRichs,
-                  active: selectedTab == _RailTab.calls,
+                  active: !appAccountListMode && selectedTab == _RailTab.calls,
                   onTap: () => onTabSelected(_RailTab.calls),
                 ),
                 const SizedBox(height: 12),
                 _RailItem(
                   icon: Icons.login_rounded,
                   label: l10n.navLogin,
-                  onTap: onAppAccountTap,
+                  onTap: onAppAccountDialogTap,
                 ),
                 const SizedBox(height: 12),
                 _RailItem(
@@ -2922,6 +3303,197 @@ class _AccountAvatar extends StatelessWidget {
   }
 }
 
+class _AppAccountListPane extends StatelessWidget {
+  const _AppAccountListPane({
+    required this.accounts,
+    required this.selectedIndex,
+    required this.isLoading,
+    required this.emptyMessage,
+    required this.l10n,
+    required this.onAddOrSwitch,
+    required this.onSelected,
+  });
+
+  final List<AppAccountHistoryEntry> accounts;
+  final int selectedIndex;
+  final bool isLoading;
+  final String emptyMessage;
+  final AppLocalizations l10n;
+  final VoidCallback onAddOrSwitch;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 18,
+            top: 12,
+            width: 246,
+            child: Text(
+              l10n.appAccountListPanelTitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xff111b21),
+                fontSize: 18,
+                height: 24 / 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.1,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            top: 42,
+            width: 299,
+            child: SizedBox(
+              height: 34,
+              child: FilledButton.icon(
+                onPressed: onAddOrSwitch,
+                icon: const Icon(Icons.manage_accounts_rounded, size: 17),
+                label: Text(l10n.appAccountListAddOrSwitch),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xffe8f5ef),
+                  foregroundColor: const Color(0xff177345),
+                  elevation: 0,
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    height: 18 / 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: const BorderRadius.only(
+                      topRight: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 10,
+            width: 281,
+            top: 96,
+            bottom: 0,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: isLoading
+                  ? _ConversationLoading(message: l10n.workspaceLoadingUsers)
+                  : accounts.isEmpty
+                  ? _ConversationEmpty(message: emptyMessage)
+                  : Scrollbar(
+                      thumbVisibility: accounts.length > 8,
+                      radius: const Radius.circular(99),
+                      child: ListView.separated(
+                        key: ValueKey(
+                          'app_accounts_${accounts.first.id}_${accounts.length}',
+                        ),
+                        padding: const EdgeInsets.only(bottom: 18),
+                        physics: const ClampingScrollPhysics(),
+                        itemBuilder: (context, index) => _AppAccountListTile(
+                          account: accounts[index],
+                          selected: index == selectedIndex,
+                          onTap: () => onSelected(index),
+                        ),
+                        separatorBuilder: (_, _) => const SizedBox(height: 6),
+                        itemCount: accounts.length,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AppAccountListTile extends StatelessWidget {
+  const _AppAccountListTile({
+    required this.account,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AppAccountHistoryEntry account;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _accountDisplayName(account);
+    final email = account.email.trim();
+
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: title,
+      child: InkWell(
+        onTap: onTap,
+        splashFactory: NoSplash.splashFactory,
+        hoverColor: Colors.transparent,
+        focusColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.only(right: 10),
+          child: Container(
+            height: 68,
+            padding: const EdgeInsets.fromLTRB(6, 5, 14, 5),
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xfff0f2f5) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                _LetterAvatar(
+                  color: _ConversationData.avatarColorFor(account.id),
+                  label: _accountInitial(title),
+                  avatarUrl: account.avatarUrl,
+                  online: account.token.trim().isNotEmpty,
+                  size: 50,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xff3b4a54),
+                          fontSize: 15,
+                          height: 20 / 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        email.isEmpty ? 'UID ${account.id}' : email,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xff667781),
+                          fontSize: 12,
+                          height: 16 / 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ConversationPane extends StatelessWidget {
   const _ConversationPane({
     required this.conversations,
@@ -3191,6 +3763,1013 @@ class _ConversationEmpty extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AppAccountInfoSection extends StatefulWidget {
+  const _AppAccountInfoSection({
+    required this.account,
+    required this.l10n,
+    required this.isCurrent,
+    required this.isAvatarUpdating,
+    required this.onAvatarTap,
+  });
+
+  final AppAccountHistoryEntry? account;
+  final AppLocalizations l10n;
+  final bool isCurrent;
+  final bool isAvatarUpdating;
+  final ValueChanged<AppAccountHistoryEntry> onAvatarTap;
+
+  @override
+  State<_AppAccountInfoSection> createState() => _AppAccountInfoSectionState();
+}
+
+class _AppAccountInfoSectionState extends State<_AppAccountInfoSection> {
+  int _selectedTab = 0;
+  bool _isEditingBasicProfile = false;
+
+  @override
+  void didUpdateWidget(covariant _AppAccountInfoSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account?.id != widget.account?.id) {
+      _selectedTab = 0;
+      _isEditingBasicProfile = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final account = widget.account;
+    final l10n = widget.l10n;
+    if (account == null) {
+      return Container(
+        color: const Color(0xfff0f1f5),
+        alignment: Alignment.center,
+        child: Text(
+          l10n.appAccountListSelectAccount,
+          style: const TextStyle(
+            color: Color(0xff667781),
+            fontSize: 14,
+            height: 20 / 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    final displayName = _accountDisplayName(account);
+
+    return Container(
+      color: const Color(0xfff4f5f8),
+      child: Column(
+        children: [
+          _AppAccountInfoTitleBar(
+            title: _isEditingBasicProfile
+                ? l10n.appAccountInfoBasicProfile
+                : l10n.contactInfoTitle,
+            showBack: _isEditingBasicProfile,
+            onBack: () => setState(() => _isEditingBasicProfile = false),
+            onEdit: _isEditingBasicProfile
+                ? null
+                : () => setState(() => _isEditingBasicProfile = true),
+          ),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: _isEditingBasicProfile
+                  ? _BasicProfileEditor(
+                      key: ValueKey('basic_profile_${account.id}'),
+                      account: account,
+                      l10n: l10n,
+                      displayName: displayName,
+                      isAvatarUpdating: widget.isAvatarUpdating,
+                      onAvatarTap: () => widget.onAvatarTap(account),
+                    )
+                  : _ProfileOverview(
+                      key: ValueKey('profile_overview_${account.id}'),
+                      account: account,
+                      l10n: l10n,
+                      displayName: displayName,
+                      isCurrent: widget.isCurrent,
+                      isAvatarUpdating: widget.isAvatarUpdating,
+                      onAvatarTap: () => widget.onAvatarTap(account),
+                      selectedTab: _selectedTab,
+                      onTabSelected: (index) {
+                        setState(() => _selectedTab = index);
+                      },
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AppAccountInfoTitleBar extends StatelessWidget {
+  const _AppAccountInfoTitleBar({
+    required this.title,
+    required this.showBack,
+    required this.onBack,
+    required this.onEdit,
+  });
+
+  final String title;
+  final bool showBack;
+  final VoidCallback onBack;
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 58,
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 22),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 88,
+            child: showBack
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: onBack,
+                      icon: const Icon(Icons.chevron_left_rounded, size: 25),
+                      label: Text(AppLocalizations.of(context).contactInfoBack),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xff287bc5),
+                        padding: EdgeInsets.zero,
+                        textStyle: const TextStyle(
+                          fontSize: 15,
+                          height: 20 / 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+          Expanded(
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xff111b21),
+                fontSize: 19,
+                height: 26 / 19,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 88,
+            child: onEdit == null
+                ? const SizedBox.shrink()
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      tooltip: AppLocalizations.of(
+                        context,
+                      ).appAccountInfoEditProfile,
+                      onPressed: onEdit,
+                      icon: const Icon(Icons.edit_square),
+                      color: const Color(0xff111b21),
+                      splashRadius: 20,
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileOverview extends StatelessWidget {
+  const _ProfileOverview({
+    super.key,
+    required this.account,
+    required this.l10n,
+    required this.displayName,
+    required this.isCurrent,
+    required this.isAvatarUpdating,
+    required this.onAvatarTap,
+    required this.selectedTab,
+    required this.onTabSelected,
+  });
+
+  final AppAccountHistoryEntry account;
+  final AppLocalizations l10n;
+  final String displayName;
+  final bool isCurrent;
+  final bool isAvatarUpdating;
+  final VoidCallback onAvatarTap;
+  final int selectedTab;
+  final ValueChanged<int> onTabSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final email = account.email.trim();
+    final idText = account.id > 0 ? '${account.id}' : '--';
+    final registerDate = _formatAppAccountDate(account.updatedAt);
+
+    return CustomScrollView(
+      key: ValueKey('profile_overview_scroll_${account.id}'),
+      slivers: [
+        SliverToBoxAdapter(
+          child: _ProfileHeroHeader(
+            account: account,
+            displayName: displayName,
+            isCurrent: isCurrent,
+            isAvatarUpdating: isAvatarUpdating,
+            onAvatarTap: onAvatarTap,
+            l10n: l10n,
+          ),
+        ),
+        SliverPersistentHeader(
+          pinned: true,
+          delegate: _ProfileTabsHeaderDelegate(
+            child: _AppAccountProfileTabs(
+              l10n: l10n,
+              selectedIndex: selectedTab,
+              onSelected: onTabSelected,
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(34, 24, 34, 34),
+          sliver: SliverToBoxAdapter(
+            child: selectedTab == 0
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ProfileAlbumSection(title: l10n.appAccountInfoPhotoWall),
+                      const SizedBox(height: 28),
+                      _ProfileAlbumSection(
+                        title: l10n.appAccountInfoPrivateAlbum,
+                      ),
+                      const SizedBox(height: 28),
+                      _ProfileCard(
+                        children: [
+                          _ProfileSectionHeader(
+                            title: l10n.appAccountInfoProfile,
+                          ),
+                          const SizedBox(height: 10),
+                          _ProfileInfoRow(
+                            assetPath: 'assets/profile/icon_user_64.webp',
+                            label: l10n.appAccountInfoId,
+                            value: idText,
+                            copyable: true,
+                          ),
+                          _ProfileInfoRow(
+                            assetPath: 'assets/profile/icon_birthday_64.webp',
+                            label: l10n.appAccountInfoBirthday,
+                            value: '--',
+                          ),
+                          _ProfileInfoRow(
+                            assetPath: 'assets/profile/icon_zodiac_64.webp',
+                            label: l10n.appAccountInfoZodiac,
+                            value: '--',
+                          ),
+                          _ProfileInfoRow(
+                            assetPath:
+                                'assets/profile/icon_register_time_64.webp',
+                            label: l10n.appAccountInfoRegisterTime,
+                            value: registerDate,
+                          ),
+                          if (email.isNotEmpty)
+                            _ProfileInfoRow(
+                              icon: Icons.mail_outline_rounded,
+                              label: l10n.appAccountInfoAccount,
+                              value: email,
+                              showDivider: false,
+                            ),
+                        ],
+                      ),
+                    ],
+                  )
+                : _ProfileEmptyTab(message: l10n.appAccountInfoEmptyTab),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileTabsHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _ProfileTabsHeaderDelegate({required this.child});
+
+  static const double _height = 48;
+
+  final Widget child;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Container(
+      color: const Color(0xfff4f5f8),
+      padding: const EdgeInsets.fromLTRB(34, 0, 34, 0),
+      alignment: Alignment.centerLeft,
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _ProfileTabsHeaderDelegate oldDelegate) {
+    return oldDelegate.child != child;
+  }
+}
+
+class _ProfileAlbumSection extends StatelessWidget {
+  const _ProfileAlbumSection({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _ProfileSectionHeader(title: title, trailing: '0'),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xffededed)),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.add_rounded,
+              color: Color(0xffd1d1d1),
+              size: 30,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileHeroHeader extends StatelessWidget {
+  const _ProfileHeroHeader({
+    required this.account,
+    required this.displayName,
+    required this.isCurrent,
+    required this.isAvatarUpdating,
+    required this.onAvatarTap,
+    required this.l10n,
+  });
+
+  final AppAccountHistoryEntry account;
+  final String displayName;
+  final bool isCurrent;
+  final bool isAvatarUpdating;
+  final VoidCallback onAvatarTap;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xfff4f5f8),
+      padding: const EdgeInsets.fromLTRB(44, 36, 44, 30),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _EditableProfileAvatar(
+            color: _ConversationData.avatarColorFor(account.id),
+            label: _accountInitial(displayName),
+            avatarUrl: account.avatarUrl,
+            online: isCurrent,
+            size: 122,
+            isUpdating: isAvatarUpdating,
+            onTap: onAvatarTap,
+          ),
+          const SizedBox(height: 22),
+          Text(
+            displayName,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xff111b21),
+              fontSize: 28,
+              height: 35 / 28,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                l10n.contactInfoLastSeenRecently,
+                style: const TextStyle(
+                  color: Color(0xff9b9b9b),
+                  fontSize: 17,
+                  height: 24 / 17,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const _ProfileBadge(
+                text: '♂18',
+                color: Color(0xff6dccf8),
+                icon: Icons.male_rounded,
+              ),
+              const _ProfileBadge(
+                text: 'New',
+                color: Color(0xff54d39a),
+                icon: Icons.auto_awesome_rounded,
+              ),
+              const _ProfileBadge(
+                text: '0',
+                color: Color(0xffd9d9d9),
+                icon: Icons.warning_amber_rounded,
+              ),
+              const _ProfileBadge(
+                text: 'VIP0',
+                color: Color(0xffcfcfcf),
+                icon: Icons.workspace_premium_rounded,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileBadge extends StatelessWidget {
+  const _ProfileBadge({
+    required this.text,
+    required this.color,
+    required this.icon,
+  });
+
+  final String text;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 20,
+      padding: const EdgeInsets.symmetric(horizontal: 7),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 12),
+          const SizedBox(width: 3),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+              height: 16 / 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditableProfileAvatar extends StatelessWidget {
+  const _EditableProfileAvatar({
+    required this.color,
+    required this.label,
+    required this.avatarUrl,
+    required this.online,
+    required this.size,
+    required this.isUpdating,
+    required this.onTap,
+  });
+
+  final Color color;
+  final String label;
+  final String avatarUrl;
+  final bool online;
+  final double size;
+  final bool isUpdating;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: AppLocalizations.of(context).appAccountAvatarChange,
+      child: GestureDetector(
+        onTap: isUpdating ? null : onTap,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _LetterAvatar(
+              color: color,
+              label: label,
+              avatarUrl: avatarUrl,
+              online: online,
+              size: size,
+            ),
+            Positioned(
+              right: 2,
+              bottom: 2,
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xff287bc5),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                alignment: Alignment.center,
+                child: isUpdating
+                    ? const SizedBox(
+                        width: 15,
+                        height: 15,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.photo_camera_rounded,
+                        color: Colors.white,
+                        size: 17,
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BasicProfileEditor extends StatelessWidget {
+  const _BasicProfileEditor({
+    super.key,
+    required this.account,
+    required this.l10n,
+    required this.displayName,
+    required this.isAvatarUpdating,
+    required this.onAvatarTap,
+  });
+
+  final AppAccountHistoryEntry account;
+  final AppLocalizations l10n;
+  final String displayName;
+  final bool isAvatarUpdating;
+  final VoidCallback onAvatarTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final nickname = displayName.trim().isEmpty ? '--' : displayName.trim();
+    final nicknameCount = min(nickname.characters.length, 20);
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(38, 24, 38, 36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: _EditableProfileAvatar(
+              color: _ConversationData.avatarColorFor(account.id),
+              label: _accountInitial(displayName),
+              avatarUrl: account.avatarUrl,
+              online: true,
+              size: 104,
+              isUpdating: isAvatarUpdating,
+              onTap: onAvatarTap,
+            ),
+          ),
+          const SizedBox(height: 24),
+          _BasicProfileFieldCard(
+            label: l10n.appAccountInfoNickname,
+            trailing: '$nicknameCount/20',
+            height: 76,
+            child: Text(
+              nickname,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xff111b21),
+                fontSize: 17,
+                height: 24 / 17,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          _BasicProfileFieldCard(
+            label: l10n.appAccountInfoBirthday,
+            height: 76,
+            trailingIcon: Icons.chevron_right_rounded,
+            child: const Text(
+              '--',
+              style: TextStyle(
+                color: Color(0xff111b21),
+                fontSize: 17,
+                height: 24 / 17,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          _BasicProfileFieldCard(
+            label: l10n.appAccountInfoSignature,
+            trailing: '0/140',
+            height: 148,
+            alignment: Alignment.topLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                l10n.appAccountInfoSignaturePlaceholder,
+                style: const TextStyle(
+                  color: Color(0xff9ca3af),
+                  fontSize: 16,
+                  height: 23 / 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 22),
+          _ProfileCard(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            children: [
+              _ProfileInfoRow(
+                icon: Icons.record_voice_over_outlined,
+                label: l10n.appAccountInfoVoiceIntro,
+                value: '',
+              ),
+              _ProfileInfoRow(
+                icon: Icons.straighten_rounded,
+                label: l10n.appAccountInfoHeight,
+                value: '--',
+              ),
+              _ProfileInfoRow(
+                icon: Icons.monitor_weight_outlined,
+                label: l10n.appAccountInfoWeight,
+                value: '--',
+              ),
+              _ProfileInfoRow(
+                icon: Icons.business_center_outlined,
+                label: l10n.appAccountInfoIndustry,
+                value: '--',
+              ),
+              _ProfileInfoRow(
+                icon: Icons.work_outline_rounded,
+                label: l10n.appAccountInfoOccupation,
+                value: '--',
+              ),
+              _ProfileInfoRow(
+                icon: Icons.public_rounded,
+                label: l10n.appAccountInfoBirthplace,
+                value: '--',
+              ),
+              _ProfileInfoRow(
+                icon: Icons.location_on_outlined,
+                label: l10n.appAccountInfoResidence,
+                value: '--',
+                showDivider: false,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AppAccountProfileTabs extends StatelessWidget {
+  const _AppAccountProfileTabs({
+    required this.l10n,
+    required this.selectedIndex,
+    required this.onSelected,
+  });
+
+  final AppLocalizations l10n;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final tabs = [
+      l10n.appAccountInfoProfile,
+      '${l10n.appAccountInfoActivity} 0',
+      l10n.appAccountInfoRelationship,
+      l10n.appAccountInfoAlbum,
+    ];
+    return Row(
+      children: [
+        for (var index = 0; index < tabs.length; index++) ...[
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => onSelected(index),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 2,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    tabs[index],
+                    style: TextStyle(
+                      color: index == selectedIndex
+                          ? const Color(0xff111b21)
+                          : const Color(0xffa0a0a0),
+                      fontSize: 17,
+                      height: 24 / 17,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: index == selectedIndex ? 46 : 0,
+                height: 2,
+                color: const Color(0xff111b21),
+              ),
+            ],
+          ),
+          if (index != tabs.length - 1) const SizedBox(width: 34),
+        ],
+      ],
+    );
+  }
+}
+
+class _ProfileCard extends StatelessWidget {
+  const _ProfileCard({
+    required this.children,
+    this.padding = const EdgeInsets.fromLTRB(18, 18, 18, 8),
+  });
+
+  final List<Widget> children;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _BasicProfileFieldCard extends StatelessWidget {
+  const _BasicProfileFieldCard({
+    required this.label,
+    required this.child,
+    required this.height,
+    this.trailing,
+    this.trailingIcon,
+    this.alignment = Alignment.centerLeft,
+  });
+
+  final String label;
+  final Widget child;
+  final double height;
+  final String? trailing;
+  final IconData? trailingIcon;
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Row(
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xff9ca3af),
+                  fontSize: 14,
+                  height: 20 / 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              if (trailing != null)
+                Text(
+                  trailing!,
+                  style: const TextStyle(
+                    color: Color(0xffa6a6a6),
+                    fontSize: 14,
+                    height: 20 / 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          height: height,
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.035),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Align(alignment: alignment, child: child),
+              ),
+              if (trailingIcon != null)
+                Icon(trailingIcon, color: const Color(0xffb8b8b8), size: 22),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileEmptyTab extends StatelessWidget {
+  const _ProfileEmptyTab({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 210,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(
+          color: Color(0xff8b98a1),
+          fontSize: 14,
+          height: 20 / 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileSectionHeader extends StatelessWidget {
+  const _ProfileSectionHeader({required this.title, this.trailing});
+
+  final String title;
+  final String? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: Color(0xff111b21),
+            fontSize: 18,
+            height: 25 / 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const Spacer(),
+        if (trailing != null)
+          Text(
+            trailing!,
+            style: const TextStyle(
+              color: Color(0xff9a9a9a),
+              fontSize: 16,
+              height: 22 / 16,
+            ),
+          ),
+        if (trailing != null)
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: Color(0xffb8b8b8),
+            size: 25,
+          ),
+      ],
+    );
+  }
+}
+
+class _ProfileInfoRow extends StatelessWidget {
+  const _ProfileInfoRow({
+    required this.label,
+    required this.value,
+    this.icon,
+    this.assetPath,
+    this.copyable = false,
+    this.showDivider = true,
+  });
+
+  final String label;
+  final String value;
+  final IconData? icon;
+  final String? assetPath;
+  final bool copyable;
+  final bool showDivider;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        border: showDivider
+            ? const Border(
+                bottom: BorderSide(color: Color(0xffeeeeee), width: 1),
+              )
+            : null,
+      ),
+      child: Row(
+        children: [
+          if (assetPath != null)
+            Image.asset(assetPath!, width: 25, height: 25)
+          else
+            Icon(icon, color: const Color(0xff24292f), size: 24),
+          const SizedBox(width: 16),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xff111b21),
+              fontSize: 16,
+              height: 22 / 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xff333333),
+                fontSize: 16,
+                height: 22 / 16,
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+          if (copyable)
+            const Icon(Icons.copy_rounded, color: Color(0xffc4c4c4), size: 17),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatAppAccountDate(DateTime dateTime) {
+  if (dateTime.millisecondsSinceEpoch <= 0) {
+    return '--';
+  }
+  return '${dateTime.year}/${dateTime.month}/${dateTime.day}';
 }
 
 class _ConversationTile extends StatelessWidget {

@@ -19,6 +19,26 @@ class AppAccountHistoryEntry {
 
   bool get canLogin => email.trim().isNotEmpty && password.isNotEmpty;
 
+  AppAccountHistoryEntry copyWith({
+    int? id,
+    String? email,
+    String? displayName,
+    String? avatarUrl,
+    String? password,
+    String? token,
+    DateTime? updatedAt,
+  }) {
+    return AppAccountHistoryEntry(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      displayName: displayName ?? this.displayName,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      password: password ?? this.password,
+      token: token ?? this.token,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

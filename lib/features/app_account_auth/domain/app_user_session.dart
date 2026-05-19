@@ -21,6 +21,30 @@ class AppUserSession {
   final int? safePasswordStatus;
   final int? googleCodeStatus;
 
+  AppUserSession copyWith({
+    int? id,
+    String? email,
+    String? displayName,
+    String? certificate,
+    String? platform,
+    String? deviceId,
+    String? avatarUrl,
+    int? safePasswordStatus,
+    int? googleCodeStatus,
+  }) {
+    return AppUserSession(
+      id: id ?? this.id,
+      email: email ?? this.email,
+      displayName: displayName ?? this.displayName,
+      certificate: certificate ?? this.certificate,
+      platform: platform ?? this.platform,
+      deviceId: deviceId ?? this.deviceId,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
+      safePasswordStatus: safePasswordStatus ?? this.safePasswordStatus,
+      googleCodeStatus: googleCodeStatus ?? this.googleCodeStatus,
+    );
+  }
+
   factory AppUserSession.fromLoginResponse({
     required Map<String, dynamic> data,
     required String certificate,

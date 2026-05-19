@@ -337,6 +337,114 @@ class AppLocalizationsZh extends AppLocalizations {
   String get loginQrScanToSignIn => '掃描登入';
 
   @override
+  String get appAccountListPanelTitle => '編輯&切換帳號';
+
+  @override
+  String get appAccountListAddOrSwitch => '切換&新增';
+
+  @override
+  String get appAccountListEmpty => '這台設備還沒有登入過真實 APP 帳號。';
+
+  @override
+  String get appAccountListLoadFailed => 'APP 帳號載入失敗，請稍後再試。';
+
+  @override
+  String get appAccountListSelectAccount => '請選擇一個真實 APP 帳號查看資料。';
+
+  @override
+  String get appAccountInfoAccount => '帳號';
+
+  @override
+  String get appAccountInfoNickname => '暱稱';
+
+  @override
+  String get appAccountInfoBasicProfile => '基本檔案';
+
+  @override
+  String get appAccountInfoEditProfile => '編輯檔案';
+
+  @override
+  String get appAccountInfoProfile => '個人檔案';
+
+  @override
+  String get appAccountInfoHonor => '榮譽';
+
+  @override
+  String get appAccountInfoActivity => '動態';
+
+  @override
+  String get appAccountInfoRelationship => '關係';
+
+  @override
+  String get appAccountInfoAlbum => '相冊';
+
+  @override
+  String get appAccountInfoFamily => '家族';
+
+  @override
+  String get appAccountInfoGoldCoin => '獲得金幣';
+
+  @override
+  String get appAccountInfoPrivateAlbum => '隱私相冊';
+
+  @override
+  String get appAccountInfoPhotoWall => '照片牆';
+
+  @override
+  String get appAccountInfoId => 'ID';
+
+  @override
+  String get appAccountInfoBirthday => '生日';
+
+  @override
+  String get appAccountInfoZodiac => '星座';
+
+  @override
+  String get appAccountInfoRegisterTime => '註冊時間';
+
+  @override
+  String get appAccountInfoSignature => '個性簽名';
+
+  @override
+  String get appAccountInfoSignaturePlaceholder => '說點什麼...';
+
+  @override
+  String get appAccountInfoVoiceIntro => '語音介紹';
+
+  @override
+  String get appAccountInfoHeight => '身高';
+
+  @override
+  String get appAccountInfoWeight => '體重';
+
+  @override
+  String get appAccountInfoIndustry => '行業';
+
+  @override
+  String get appAccountInfoOccupation => '職業';
+
+  @override
+  String get appAccountInfoBirthplace => '出生地';
+
+  @override
+  String get appAccountInfoResidence => '居住地';
+
+  @override
+  String get appAccountAvatarChange => '更換頭像';
+
+  @override
+  String get appAccountAvatarPickerTitle => '選擇頭像圖片';
+
+  @override
+  String get appAccountAvatarUploadSuccess => '頭像已更新。';
+
+  @override
+  String get appAccountAvatarUploadFailed => '頭像更新失敗，請稍後再試。';
+
+  @override
+  String get appAccountInfoEmptyTab => '暫無內容';
+
+  @override
   String get workspaceUserOnline => '在線';
 
   @override
@@ -722,6 +830,114 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get loginQrScanToSignIn => '掃描登入';
+
+  @override
+  String get appAccountListPanelTitle => '編輯&切換帳號';
+
+  @override
+  String get appAccountListAddOrSwitch => '切換&新增';
+
+  @override
+  String get appAccountListEmpty => '這台設備還沒有登入過真實 APP 帳號。';
+
+  @override
+  String get appAccountListLoadFailed => 'APP 帳號載入失敗，請稍後再試。';
+
+  @override
+  String get appAccountListSelectAccount => '請選擇一個真實 APP 帳號查看資料。';
+
+  @override
+  String get appAccountInfoAccount => '帳號';
+
+  @override
+  String get appAccountInfoNickname => '暱稱';
+
+  @override
+  String get appAccountInfoBasicProfile => '基本檔案';
+
+  @override
+  String get appAccountInfoEditProfile => '編輯檔案';
+
+  @override
+  String get appAccountInfoProfile => '個人檔案';
+
+  @override
+  String get appAccountInfoHonor => '榮譽';
+
+  @override
+  String get appAccountInfoActivity => '動態';
+
+  @override
+  String get appAccountInfoRelationship => '關係';
+
+  @override
+  String get appAccountInfoAlbum => '相冊';
+
+  @override
+  String get appAccountInfoFamily => '家族';
+
+  @override
+  String get appAccountInfoGoldCoin => '獲得金幣';
+
+  @override
+  String get appAccountInfoPrivateAlbum => '隱私相冊';
+
+  @override
+  String get appAccountInfoPhotoWall => '照片牆';
+
+  @override
+  String get appAccountInfoId => 'ID';
+
+  @override
+  String get appAccountInfoBirthday => '生日';
+
+  @override
+  String get appAccountInfoZodiac => '星座';
+
+  @override
+  String get appAccountInfoRegisterTime => '註冊時間';
+
+  @override
+  String get appAccountInfoSignature => '個性簽名';
+
+  @override
+  String get appAccountInfoSignaturePlaceholder => '說點什麼...';
+
+  @override
+  String get appAccountInfoVoiceIntro => '語音介紹';
+
+  @override
+  String get appAccountInfoHeight => '身高';
+
+  @override
+  String get appAccountInfoWeight => '體重';
+
+  @override
+  String get appAccountInfoIndustry => '行業';
+
+  @override
+  String get appAccountInfoOccupation => '職業';
+
+  @override
+  String get appAccountInfoBirthplace => '出生地';
+
+  @override
+  String get appAccountInfoResidence => '居住地';
+
+  @override
+  String get appAccountAvatarChange => '更換頭像';
+
+  @override
+  String get appAccountAvatarPickerTitle => '選擇頭像圖片';
+
+  @override
+  String get appAccountAvatarUploadSuccess => '頭像已更新。';
+
+  @override
+  String get appAccountAvatarUploadFailed => '頭像更新失敗，請稍後再試。';
+
+  @override
+  String get appAccountInfoEmptyTab => '暫無內容';
 
   @override
   String get workspaceUserOnline => '在線';

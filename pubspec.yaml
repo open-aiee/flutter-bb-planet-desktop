@@ -80,6 +80,9 @@ flutter:
   assets:
     - assets/chat_emoji_games/
     - assets/chat_input/
+    - assets/countries/
+    - assets/countries/flags/
+    - assets/profile/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
